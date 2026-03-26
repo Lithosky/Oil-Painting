@@ -1,0 +1,159 @@
+@import "tailwindcss";
+
+/* ── 油画风浅色主题 ───────────────────────────────────── */
+:root {
+  --canvas:       #FAF7F2;   /* 画布白 */
+  --parchment:    #F3EDE2;   /* 羊皮纸 */
+  --parchment-dk: #E8DFD0;   /* 深羊皮纸 */
+  --card:         #FFFFFF;
+  --border:       #E5DDD0;
+  --border-dk:    #CEC4B4;
+  --ink:          #1E1408;   /* 主文字 */
+  --ink-2:        #5A4A34;   /* 次文字 */
+  --ink-3:        #8B7B65;   /* 辅助文字 */
+  --sienna:       #B8621A;   /* 熟赭主色 */
+  --sienna-lt:    #FDECD8;   /* 浅熟赭 */
+  --sienna-dk:    #8E4A12;   /* 深熟赭 */
+  --prussian:     #2B5988;   /* 普鲁士蓝 */
+  --prussian-lt:  #E3EDF8;
+  --viridian:     #3C7060;   /* 翠绿 */
+  --viridian-lt:  #E0F0EB;
+  --shadow:       rgba(30, 20, 8, 0.08);
+  --shadow-md:    rgba(30, 20, 8, 0.14);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background-color: var(--canvas);
+  color: var(--ink);
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Serif SC', Georgia, serif;
+  min-height: 100vh;
+}
+
+/* 细腻画布纹理背景 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 39px,
+      rgba(180,160,120,0.04) 40px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 39px,
+      rgba(180,160,120,0.04) 40px
+    );
+  pointer-events: none;
+  z-index: 0;
+}
+
+main, nav, footer { position: relative; z-index: 1; }
+
+/* 卡片 */
+.art-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+.art-card:hover {
+  box-shadow: 0 4px 16px var(--shadow-md);
+}
+
+/* 按钮 */
+.btn-primary {
+  background: var(--sienna);
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-weight: 600;
+  transition: all 0.2s;
+  border: none;
+  cursor: pointer;
+}
+.btn-primary:hover { background: var(--sienna-dk); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(184,98,26,0.35); }
+.btn-primary:active { transform: translateY(0); }
+
+.btn-secondary {
+  background: var(--parchment);
+  color: var(--sienna);
+  border: 1.5px solid var(--border-dk);
+  border-radius: 10px;
+  padding: 9px 20px;
+  font-weight: 500;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+.btn-secondary:hover { background: var(--sienna-lt); border-color: var(--sienna); }
+
+/* 滑块 */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--parchment-dk);
+  outline: none;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--sienna);
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px var(--shadow-md);
+}
+
+/* 徽章 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.badge-sienna  { background: var(--sienna-lt);   color: var(--sienna-dk); border: 1px solid #E8C4A0; }
+.badge-prussian{ background: var(--prussian-lt); color: var(--prussian);  border: 1px solid #B8D0E8; }
+.badge-viridian{ background: var(--viridian-lt); color: var(--viridian);  border: 1px solid #A8D4CA; }
+
+/* 分数颜色 */
+.score-great  { color: #2E7A3A; }
+.score-good   { color: #B8621A; }
+.score-ok     { color: #9A7020; }
+.score-low    { color: #A03020; }
+
+/* 颜色卡片 */
+.color-swatch {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  border-radius: 10px;
+}
+.color-swatch:hover { transform: scale(1.1); box-shadow: 0 4px 12px var(--shadow-md); }
+
+/* 绘画卡片 */
+.painting-thumb {
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+.painting-thumb:hover { transform: translateY(-3px); box-shadow: 0 8px 20px var(--shadow-md); }
+
+/* 进度条 */
+.progress-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--parchment-dk);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
