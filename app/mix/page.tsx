@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { FAMOUS_PAINTINGS, type Painting } from '@/lib/paintings'
 import {
   PAINT_BRANDS, type PaintColor,
@@ -28,7 +28,10 @@ export default function MixPage() {
   const [brandTab, setBrandTab]     = useState(0)
   // 手动输入时保存临时字符串
   const [editMap, setEditMap]       = useState<Record<string, string>>({})
-  const inputRefs                   = useRef<Record<string, HTMLInputElement | null>>({})
+  const numInputRefs  = useRef<Record<string, HTMLInputElement | null>>({})  // number inputs
+  const sliderRefs    = useRef<Record<string, HTMLInputElement | null>>({})  // range sliders
+  const liveRatiosRef = useRef<Record<string, number>>({})                  // ratios during drag
+  const isDraggingRef = useRef(false)
 
   const targetHex = painting.dominantColors[targetIdx] ?? '#888'
   const targetRgb = hexToRgb(targetHex) as [number, number, number]
@@ -68,7 +71,56 @@ export default function MixPage() {
     setShowSug(false)
   }, [])
 
-  // ── 滑块调整：改变一个，其余按比例缩放使总和保持 100 ───────
+  // ── 当 selected 从外部改变时（加色/删色/随机），同步滑块 DOM ─
+  useEffect(() => {
+    if (isDraggingRef.current) return
+    liveRatiosRef.current = Object.fromEntries(selected.map(c => [c.color.id, c.ratio]))
+    selected.forEach(sc => {
+      const rounded = Math.round(sc.ratio)
+      const sliderEl = sliderRefs.current[sc.color.id]
+      if (sliderEl) sliderEl.value = String(rounded)
+      const numEl = numInputRefs.current[sc.color.id]
+      if (numEl && document.activeElement !== numEl) numEl.value = String(rounded)
+    })
+  }, [selected])
+
+  // ── 滑块拖动开始：初始化 liveRatios ──────────────────────────
+  const handleSliderPointerDown = useCallback((id: string) => {
+    isDraggingRef.current = true
+    liveRatiosRef.current = Object.fromEntries(selected.map(c => [c.color.id, c.ratio]))
+  }, [selected])
+
+  // ── 滑块拖动中：直接更新 DOM，不触发 React re-render ─────────
+  const handleSliderInput = useCallback((id: string, newVal: number) => {
+    const clamped = Math.max(1, Math.min(99, newVal))
+    const live = liveRatiosRef.current
+    const otherIds = selected.filter(c => c.color.id !== id).map(c => c.color.id)
+    const othersSum = otherIds.reduce((s, oid) => s + (live[oid] ?? 1), 0)
+    const remaining = 100 - clamped
+    live[id] = clamped
+    otherIds.forEach(oid => {
+      const old = live[oid] ?? 1
+      live[oid] = othersSum > 0 ? Math.max(0.1, old * (remaining / othersSum)) : remaining / otherIds.length
+    })
+    // 直接写入 DOM，不经过 React
+    for (const colorId of [id, ...otherIds]) {
+      const rounded = Math.round(live[colorId])
+      const sliderEl = sliderRefs.current[colorId]
+      if (sliderEl) sliderEl.value = String(rounded)
+      const numEl = numInputRefs.current[colorId]
+      if (numEl && document.activeElement !== numEl) numEl.value = String(rounded)
+    }
+  }, [selected])
+
+  // ── 滑块释放：提交到 React 状态（每次拖动只触发一次 re-render）
+  const handleSliderCommit = useCallback(() => {
+    isDraggingRef.current = false
+    const live = { ...liveRatiosRef.current }
+    setSelected(prev => normalizeRatios(prev.map(c => ({ ...c, ratio: live[c.color.id] ?? c.ratio }))))
+    setShowSug(false)
+  }, [])
+
+  // ── 手动输入比例（保留原有逻辑，走 React state）────────────────
   const updateRatioSlider = useCallback((id: string, newRatio: number) => {
     setSelected(prev => {
       const clamped = Math.max(1, Math.min(99, newRatio))
@@ -85,7 +137,6 @@ export default function MixPage() {
     setShowSug(false)
   }, [])
 
-  // ── 手动输入比例 ──────────────────────────────────────────────
   const commitManualInput = useCallback((id: string, raw: string) => {
     const v = parseFloat(raw)
     if (!isNaN(v) && v >= 1 && v <= 99) updateRatioSlider(id, v)
@@ -315,10 +366,10 @@ export default function MixPage() {
                         </span>
                         {/* 手动输入百分比 */}
                         <input
-                          ref={el => { inputRefs.current[sc.color.id] = el }}
+                          ref={el => { numInputRefs.current[sc.color.id] = el }}
                           type="number"
                           min="1" max="99" step="1"
-                          value={edit !== undefined ? edit : pct}
+                          defaultValue={pct}
                           onChange={e => setEditMap(m => ({ ...m, [sc.color.id]: e.target.value }))}
                           onBlur={e => commitManualInput(sc.color.id, e.target.value)}
                           onKeyDown={e => {
@@ -336,9 +387,15 @@ export default function MixPage() {
                           className="text-xs w-4 h-4 flex items-center justify-center"
                           style={{ color: 'var(--ink-3)' }}>✕</button>
                       </div>
+                      {/* 非受控滑块：拖动时直接操作 DOM，释放才触发 re-render */}
                       <input
-                        type="range" min="1" max="99" value={pct}
-                        onChange={e => updateRatioSlider(sc.color.id, parseFloat(e.target.value))}
+                        ref={el => { sliderRefs.current[sc.color.id] = el }}
+                        type="range" min="1" max="99"
+                        defaultValue={pct}
+                        onPointerDown={() => handleSliderPointerDown(sc.color.id)}
+                        onInput={e => handleSliderInput(sc.color.id, parseFloat((e.target as HTMLInputElement).value))}
+                        onPointerUp={handleSliderCommit}
+                        onTouchEnd={handleSliderCommit}
                         className="w-full"
                         style={{ accentColor: sc.color.hex }}
                       />
