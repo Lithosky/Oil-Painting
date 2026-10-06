@@ -1,494 +1,878 @@
-'use client'
+"use client";
 
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
-import { FAMOUS_PAINTINGS, type Painting } from '@/lib/paintings'
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  PAINT_BRANDS, type PaintColor,
-  mixPaints, colorMatchScore, getMixingSuggestion, getOptimalMix,
-  rgbToHex, hexToRgb,
-} from '@/lib/colors'
-import { proxyImg } from '@/lib/imgProxy'
-import PaintingImage from '@/components/PaintingImage'
+  ALL_COLORS,
+  PAINT_BRANDS,
+  PaintColor,
+  colorMatchScore,
+  getOptimalMix,
+  hexToRgb,
+  rgbToHex,
+} from "@/lib/colors";
+import { FAMOUS_PAINTINGS } from "@/lib/paintings";
+import {
+  Mixture,
+  MixProgress,
+  MIX_LESSONS,
+  MIX_STORAGE_KEY,
+  STARTER_COLORS,
+  colorFeedback,
+  lessonRecipe,
+  mixtureHex,
+  mixtureRgb,
+  parseMixProgress,
+  suggestNextColor,
+} from "@/lib/mixing-training";
+import "./mix.css";
 
-interface SelectedColor { color: PaintColor; ratio: number }  // ratio: 0–100 always sums to 100
-
-// ── 比例规范化 ────────────────────────────────────────────────
-function normalizeRatios(items: SelectedColor[]): SelectedColor[] {
-  const total = items.reduce((s, c) => s + c.ratio, 0)
-  if (!total) return items
-  return items.map(c => ({ ...c, ratio: (c.ratio / total) * 100 }))
-}
+type Mode = "guided" | "free" | "painting";
+const freshProgress: MixProgress = { version: 1, completed: [], attempts: [] };
 
 export default function MixPage() {
-  const [painting, setPainting]     = useState<Painting>(FAMOUS_PAINTINGS[0])
-  const [targetIdx, setTargetIdx]   = useState(0)
-  const [selected, setSelected]     = useState<SelectedColor[]>([])
-  const [showSug, setShowSug]       = useState(false)
-  const [showAns, setShowAns]       = useState(false)
-  const [brandTab, setBrandTab]     = useState(0)
-  // 手动输入时保存临时字符串
-  const [editMap, setEditMap]       = useState<Record<string, string>>({})
-  const numInputRefs  = useRef<Record<string, HTMLInputElement | null>>({})  // number inputs
-  const sliderRefs    = useRef<Record<string, HTMLInputElement | null>>({})  // range sliders
-  const liveRatiosRef = useRef<Record<string, number>>({})                  // ratios during drag
-  const isDraggingRef = useRef(false)
+  const [mode, setMode] = useState<Mode>("guided");
+  const [lessonIndex, setLessonIndex] = useState(0);
+  const [variant, setVariant] = useState(0);
+  const [paintingIndex, setPaintingIndex] = useState(0);
+  const [paintingColor, setPaintingColor] = useState(0);
+  const [customHex, setCustomHex] = useState("#7B8B70");
+  const [hexDraft, setHexDraft] = useState("#7B8B70");
+  const [hexError, setHexError] = useState("");
+  const [selected, setSelected] = useState<Mixture[]>([]);
+  const [history, setHistory] = useState<Mixture[][]>([]);
+  const [paletteTab, setPaletteTab] = useState("starter");
+  const [family, setFamily] = useState("全部色系");
+  const [search, setSearch] = useState("");
+  const [showReference, setShowReference] = useState(false);
+  const [reference, setReference] = useState<Mixture[]>([]);
+  const [assisted, setAssisted] = useState(false);
+  const [hint, setHint] = useState("");
+  const [status, setStatus] = useState("");
+  const [progress, setProgress] = useState<MixProgress>(freshProgress);
+  const [storageReady, setStorageReady] = useState(false);
+  const [showAllNotes, setShowAllNotes] = useState(false);
+  const dragging = useRef(false);
 
-  const targetHex = painting.dominantColors[targetIdx] ?? '#888'
-  const targetRgb = hexToRgb(targetHex) as [number, number, number]
-
-  const mixedRgb = useMemo<[number, number, number]>(() => {
-    if (!selected.length) return [245, 240, 230]
-    const total = selected.reduce((s, c) => s + c.ratio, 0)
-    if (!total) return [245, 240, 230]
-    return mixPaints(selected.map(c => ({ rgb: c.color.rgb as [number, number, number], ratio: c.ratio / total })))
-  }, [selected])
-
-  const score    = selected.length ? colorMatchScore(targetRgb, mixedRgb) : 0
-  const mixedHex = rgbToHex(...mixedRgb)
-  const refMix   = useMemo(() => getOptimalMix(targetRgb), [targetRgb])
-  const suggestion = useMemo(() => selected.length ? getMixingSuggestion(targetRgb, mixedRgb) : '', [targetRgb, mixedRgb, selected.length])
-
-  // ── 添加颜色：新颜色取 20%，其余按比例稀释 ─────────────────
-  const addColor = useCallback((color: PaintColor) => {
-    setSelected(prev => {
-      if (prev.some(c => c.color.id === color.id)) return prev
-      if (prev.length === 0) return [{ color, ratio: 100 }]
-      const newShare = 20
-      const scale = (100 - newShare) / 100
-      return normalizeRatios([
-        ...prev.map(c => ({ ...c, ratio: c.ratio * scale })),
-        { color, ratio: newShare },
-      ])
-    })
-    setShowSug(false); setShowAns(false)
-  }, [])
-
-  const removeColor = useCallback((id: string) => {
-    setSelected(prev => {
-      const next = prev.filter(c => c.color.id !== id)
-      return next.length ? normalizeRatios(next) : []
-    })
-    setShowSug(false)
-  }, [])
-
-  // ── 当 selected 从外部改变时（加色/删色/随机），同步滑块 DOM ─
   useEffect(() => {
-    if (isDraggingRef.current) return
-    liveRatiosRef.current = Object.fromEntries(selected.map(c => [c.color.id, c.ratio]))
-    selected.forEach(sc => {
-      const rounded = Math.round(sc.ratio)
-      const sliderEl = sliderRefs.current[sc.color.id]
-      if (sliderEl) sliderEl.value = String(rounded)
-      const numEl = numInputRefs.current[sc.color.id]
-      if (numEl && document.activeElement !== numEl) numEl.value = String(rounded)
-    })
-  }, [selected])
-
-  // ── 滑块拖动开始：初始化 liveRatios ──────────────────────────
-  const handleSliderPointerDown = useCallback((id: string) => {
-    isDraggingRef.current = true
-    liveRatiosRef.current = Object.fromEntries(selected.map(c => [c.color.id, c.ratio]))
-  }, [selected])
-
-  // ── 滑块拖动中：直接更新 DOM，不触发 React re-render ─────────
-  const handleSliderInput = useCallback((id: string, newVal: number) => {
-    const clamped = Math.max(1, Math.min(99, newVal))
-    const live = liveRatiosRef.current
-    const otherIds = selected.filter(c => c.color.id !== id).map(c => c.color.id)
-    const othersSum = otherIds.reduce((s, oid) => s + (live[oid] ?? 1), 0)
-    const remaining = 100 - clamped
-    live[id] = clamped
-    otherIds.forEach(oid => {
-      const old = live[oid] ?? 1
-      live[oid] = othersSum > 0 ? Math.max(0.1, old * (remaining / othersSum)) : remaining / otherIds.length
-    })
-    // 直接写入 DOM，不经过 React
-    for (const colorId of [id, ...otherIds]) {
-      const rounded = Math.round(live[colorId])
-      const sliderEl = sliderRefs.current[colorId]
-      if (sliderEl) sliderEl.value = String(rounded)
-      const numEl = numInputRefs.current[colorId]
-      if (numEl && document.activeElement !== numEl) numEl.value = String(rounded)
+    try {
+      setProgress(parseMixProgress(localStorage.getItem(MIX_STORAGE_KEY)));
+    } catch {
+      setStatus("浏览器暂时不能保存记录，你仍然可以继续练习。");
     }
-  }, [selected])
+    setStorageReady(true);
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get("target");
+    if (target && /^#[\da-f]{6}$/i.test(target)) {
+      setCustomHex(target);
+      setHexDraft(target);
+      setMode("free");
+    }
+    const lessonId = params.get("lesson");
+    const index = MIX_LESSONS.findIndex((l) => l.id === lessonId);
+    if (!target && index >= 0) setLessonIndex(index);
+  }, []);
 
-  // ── 滑块释放：提交到 React 状态（每次拖动只触发一次 re-render）
-  const handleSliderCommit = useCallback(() => {
-    isDraggingRef.current = false
-    const live = { ...liveRatiosRef.current }
-    setSelected(prev => normalizeRatios(prev.map(c => ({ ...c, ratio: live[c.color.id] ?? c.ratio }))))
-    setShowSug(false)
-  }, [])
+  const lesson = MIX_LESSONS[lessonIndex];
+  const painting = FAMOUS_PAINTINGS[paintingIndex];
+  const guidedRecipe = useMemo(
+    () => lessonRecipe(lesson, variant),
+    [lesson, variant],
+  );
+  const targetHex =
+    mode === "guided"
+      ? mixtureHex(guidedRecipe)
+      : mode === "painting"
+        ? painting.dominantColors[paintingColor]
+        : customHex;
+  const targetRgb = useMemo(() => hexToRgb(targetHex), [targetHex]);
+  const mixedRgb = useMemo(() => mixtureRgb(selected), [selected]);
+  const mixedHex = rgbToHex(...mixedRgb);
+  const total = selected.reduce((sum, c) => sum + c.parts, 0);
+  const hasPaint = total > 0;
+  const score = hasPaint ? colorMatchScore(targetRgb, mixedRgb) : 0;
+  const feedback = useMemo(
+    () => colorFeedback(targetRgb, mixedRgb),
+    [targetRgb, mixedRgb],
+  );
+  const recommended =
+    mode === "guided"
+      ? lesson.paletteIds.map((id) => ALL_COLORS.find((c) => c.id === id)!)
+      : STARTER_COLORS;
+  const palette =
+    paletteTab === "starter"
+      ? recommended
+      : paletteTab === "all"
+        ? ALL_COLORS
+        : (PAINT_BRANDS.find((b) => b.id === paletteTab)?.colors ??
+          STARTER_COLORS);
+  const shownColors = palette.filter(
+    (c) =>
+      (family === "全部色系" || c.series === family) &&
+      `${c.name} ${c.nameEn}`
+        .toLowerCase()
+        .includes(search.toLowerCase().trim()),
+  );
+  const label =
+    mode === "guided"
+      ? `${lesson.title} · 第 ${variant + 1} 题`
+      : mode === "painting"
+        ? `《${painting.titleZh}》色彩练习`
+        : "自由调色";
 
-  // ── 手动输入比例（保留原有逻辑，走 React state）────────────────
-  const updateRatioSlider = useCallback((id: string, newRatio: number) => {
-    setSelected(prev => {
-      const clamped = Math.max(1, Math.min(99, newRatio))
-      const others = prev.filter(c => c.color.id !== id)
-      if (!others.length) return prev
-      const othersSum = others.reduce((s, c) => s + c.ratio, 0)
-      const remaining = 100 - clamped
-      const scale = othersSum > 0 ? remaining / othersSum : 1
-      return [
-        ...others.map(c => ({ ...c, ratio: Math.max(0.1, c.ratio * scale) })),
-        { color: prev.find(c => c.color.id === id)!.color, ratio: clamped },
-      ]
-    })
-    setShowSug(false)
-  }, [])
-
-  const commitManualInput = useCallback((id: string, raw: string) => {
-    const v = parseFloat(raw)
-    if (!isNaN(v) && v >= 1 && v <= 99) updateRatioSlider(id, v)
-    setEditMap(m => { const n = { ...m }; delete n[id]; return n })
-  }, [updateRatioSlider])
-
-  const randomize = useCallback(() => {
-    const p = FAMOUS_PAINTINGS[Math.floor(Math.random() * FAMOUS_PAINTINGS.length)]
-    setPainting(p); setTargetIdx(0); setSelected([]); setShowSug(false); setShowAns(false)
-  }, [])
-
-  const scoreClass = score >= 90 ? 'score-great' : score >= 70 ? 'score-good' : score >= 50 ? 'score-ok' : 'score-low'
-  const scoreLabel = score >= 95 ? '近乎完美' : score >= 85 ? '非常接近' : score >= 70 ? '基本接近' : '继续调整'
-  const progColor  = score >= 90 ? '#2E7A3A' : score >= 70 ? '#B8621A' : score >= 50 ? '#9A7020' : '#A03020'
-  const curBrand   = PAINT_BRANDS[brandTab]
-
-  // 计算参考答案的实际分数
-  const refScore = useMemo(() => {
-    if (!refMix.length) return 0
-    const total = refMix.reduce((s, c) => s + c.ratio, 0)
-    const mixed = mixPaints(refMix.map(c => ({ rgb: c.color.rgb as [number, number, number], ratio: c.ratio / total })))
-    return colorMatchScore(targetRgb, mixed)
-  }, [refMix, targetRgb])
+  function resetExercise() {
+    setSelected([]);
+    setHistory([]);
+    setHint("");
+    setStatus("");
+    setShowReference(false);
+    setReference([]);
+    setAssisted(false);
+    dragging.current = false;
+  }
+  function changeMode(next: Mode) {
+    setMode(next);
+    resetExercise();
+    setPaletteTab("starter");
+    setSearch("");
+    setFamily("全部色系");
+  }
+  function changeLesson(index: number) {
+    setLessonIndex(index);
+    setVariant(0);
+    changeMode("guided");
+  }
+  function changeMixture(next: Mixture[], remember = true) {
+    if (remember)
+      setHistory((h) => [...h, selected.map((c) => ({ ...c }))].slice(-40));
+    setSelected(next);
+    setHint("");
+    setStatus("");
+  }
+  function addColor(color: PaintColor) {
+    const exists = selected.find((c) => c.color.id === color.id);
+    changeMixture(
+      exists
+        ? selected.map((c) =>
+            c.color.id === color.id
+              ? { ...c, parts: Math.min(20, c.parts + 1) }
+              : c,
+          )
+        : [...selected, { color, parts: 1 }],
+    );
+  }
+  function updateParts(id: string, parts: number) {
+    if (!Number.isFinite(parts)) return;
+    changeMixture(
+      selected.map((c) =>
+        c.color.id === id
+          ? { ...c, parts: Math.max(0, Math.min(20, parts)) }
+          : c,
+      ),
+      !dragging.current,
+    );
+  }
+  function undo() {
+    if (!history.length) return;
+    setSelected(history[history.length - 1]);
+    setHistory(history.slice(0, -1));
+    setHint("");
+    setStatus("");
+  }
+  function applyHex(value: string) {
+    const hex = value.startsWith("#") ? value : `#${value}`;
+    if (!/^#[\da-f]{6}$/i.test(hex)) {
+      setHexError("请输入 6 位颜色值，例如 #7B8B70。");
+      return;
+    }
+    setCustomHex(hex);
+    setHexDraft(hex);
+    setHexError("");
+    resetExercise();
+  }
+  function revealReference() {
+    if (showReference) {
+      setShowReference(false);
+      return;
+    }
+    const next =
+      mode === "guided"
+        ? guidedRecipe
+        : getOptimalMix(targetRgb, STARTER_COLORS).map((c) => ({
+            color: c.color,
+            parts: c.ratio / 5,
+          }));
+    setReference(next);
+    setShowReference(true);
+    setAssisted(true);
+  }
+  function persist(next: MixProgress): boolean {
+    setProgress(next);
+    try {
+      localStorage.setItem(MIX_STORAGE_KEY, JSON.stringify(next));
+      window.dispatchEvent(new Event("atelier-progress"));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function saveAttempt(check = false) {
+    if (!hasPaint || !storageReady) return;
+    const completed =
+      mode === "guided" && check && score >= 90 && !assisted
+        ? [...new Set([...progress.completed, lesson.id])]
+        : progress.completed;
+    const recipe = selected
+      .filter((c) => c.parts > 0)
+      .map((c) => ({ colorId: c.color.id, parts: c.parts }));
+    const last = progress.attempts[0];
+    const duplicate =
+      last &&
+      last.targetHex === targetHex &&
+      JSON.stringify(last.recipe) === JSON.stringify(recipe);
+    const attempt = {
+      id: `${Date.now()}`,
+      label,
+      targetHex,
+      mixedHex,
+      score,
+      recipe,
+      createdAt: new Date().toISOString(),
+      assisted,
+    };
+    const next: MixProgress = {
+      version: 1,
+      completed,
+      attempts: duplicate
+        ? progress.attempts
+        : [attempt, ...progress.attempts].slice(0, 20),
+    };
+    const saved = persist(next);
+    if (!saved) {
+      setStatus("这次结果已保留在当前页面，但浏览器没有允许保存到本机。");
+      return;
+    }
+    setStatus(
+      check
+        ? score >= 90
+          ? assisted
+            ? "参考练习完成。再来一题，不看配方达到 90 分，就能点亮这节课。"
+            : "这一题完成！已保存配方。接着做纸上小练习，让眼睛与手一起记住。"
+          : `已记录这次 ${score} 分的尝试。先看明度，再根据下方提示改一个变量。`
+        : "配方已保存到这台设备，下次可以继续调。",
+    );
+  }
+  function nextQuestion() {
+    resetExercise();
+    setVariant((v) => (v + 1) % lesson.recipes.length);
+  }
+  const referenceScore = reference.length
+    ? colorMatchScore(targetRgb, mixtureRgb(reference))
+    : 0;
+  const referenceTotal = reference.reduce((sum, c) => sum + c.parts, 0);
 
   return (
-    <div className="space-y-5">
-      {/* 页头 */}
-      <div className="flex items-start justify-between">
+    <div className="mix-page">
+      <header className="mix-page-heading">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>调色练习</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>
-            选择颜料，用比例滑块混合出目标颜色 · 支持手动输入百分比 · 加入新色自动稀释原有比例
+          <span className="mix-eyebrow">COLOR LAB / 调色实验室</span>
+          <h1>调色，先学会看见。</h1>
+          <p>
+            先看明暗，再看鲜灰，最后微调色相。每一次只改一点，慢慢调出自己的感觉。
           </p>
         </div>
-        <button onClick={randomize} className="btn-secondary flex items-center gap-1.5 text-sm">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          换一幅画
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-
-        {/* ── 左列：画作 + 目标色 ─────────────────────── */}
-        <div className="space-y-4">
-          <div className="art-card overflow-hidden">
-            <div className="relative" style={{ paddingBottom: '66%' }}>
-              <PaintingImage
-                src={proxyImg(painting.imageUrl)}
-                alt={painting.titleZh}
-                dominantColors={painting.dominantColors}
-                className="absolute inset-0 w-full h-full object-cover"
-              />
-              <span className="absolute top-2 left-2 badge badge-sienna text-[11px]">{painting.style}</span>
-            </div>
-            <div className="p-3">
-              <div className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>{painting.titleZh}</div>
-              <div className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>{painting.artistZh} · {painting.year}</div>
-            </div>
-          </div>
-
-          <div className="art-card p-4 space-y-3">
-            <div className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>选择训练目标色</div>
-            <div className="flex gap-2 flex-wrap">
-              {painting.dominantColors.map((hex, i) => (
-                <button key={i} onClick={() => { setTargetIdx(i); setSelected([]); setShowSug(false); setShowAns(false) }}
-                  className="w-9 h-9 rounded-xl border-2 transition-all"
-                  style={{
-                    backgroundColor: hex,
-                    borderColor: targetIdx === i ? 'var(--sienna)' : 'transparent',
-                    boxShadow: targetIdx === i ? '0 0 0 3px rgba(184,98,26,0.25)' : '0 1px 3px rgba(0,0,0,0.12)',
-                    transform: targetIdx === i ? 'scale(1.12)' : 'scale(1)',
-                  }} />
-              ))}
-            </div>
-            <div className="flex items-center gap-3 pt-1">
-              <div className="w-14 h-14 rounded-xl shadow-sm"
-                style={{ backgroundColor: targetHex, border: '1px solid var(--border-dk)' }} />
-              <div>
-                <div className="text-xs mb-0.5" style={{ color: 'var(--ink-3)' }}>目标颜色</div>
-                <div className="font-mono text-sm font-semibold" style={{ color: 'var(--ink)' }}>{targetHex.toUpperCase()}</div>
-                <div className="font-mono text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>
-                  rgb({targetRgb[0]}, {targetRgb[1]}, {targetRgb[2]})
-                </div>
-              </div>
-            </div>
-          </div>
+        <div className="mix-progress-label">
+          <span>
+            {progress.completed.length}
+            <small> / {MIX_LESSONS.length}</small>
+          </span>
+          <p>基础练习已点亮</p>
         </div>
+      </header>
 
-        {/* ── 中列：调色 ──────────────────────────────── */}
-        <div className="space-y-4">
-          {/* 颜色对比 + 评分 */}
-          <div className="art-card p-4 space-y-3">
-            <div className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>颜色对比</div>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { label: '目标颜色', hex: targetHex },
-                { label: '混合结果', hex: selected.length ? mixedHex : '#F3EDE2' },
-              ].map(({ label, hex }) => (
-                <div key={label} className="space-y-1">
-                  <div className="text-xs text-center" style={{ color: 'var(--ink-3)' }}>{label}</div>
-                  <div className="h-20 rounded-xl transition-colors duration-300"
-                    style={{ backgroundColor: hex, border: '1px solid var(--border-dk)' }} />
-                  <div className="text-xs font-mono text-center" style={{ color: 'var(--ink-3)' }}>{hex.toUpperCase()}</div>
+      <div className="mix-mode-tabs" role="tablist" aria-label="选择调色模式">
+        {(
+          [
+            { id: "guided", title: "循序练习", sub: "从两支颜料开始" },
+            { id: "free", title: "自由调色", sub: "探索任意目标色" },
+            { id: "painting", title: "名画里的颜色", sub: "向大师借一点灵感" },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={mode === t.id}
+            onClick={() => {
+              if (mode !== t.id) changeMode(t.id);
+            }}
+            className={mode === t.id ? "is-active" : ""}
+          >
+            <strong>{t.title}</strong>
+            <span>{t.sub}</span>
+          </button>
+        ))}
+      </div>
+      {mode === "guided" && (
+        <div className="mix-lesson-tabs" aria-label="基础调色课程">
+          {MIX_LESSONS.map((item, i) => (
+            <button
+              key={item.id}
+              onClick={() => {
+                if (lessonIndex !== i) changeLesson(i);
+              }}
+              aria-current={lessonIndex === i ? "step" : undefined}
+              className={lessonIndex === i ? "is-active" : ""}
+            >
+              <span className="mix-step-number">
+                {progress.completed.includes(item.id) ? "✓" : `0${i + 1}`}
+              </span>
+              <div>
+                <strong>{item.title}</strong>
+                <small>{item.subtitle}</small>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="mix-workspace">
+        <aside className="mix-sidebar">
+          {mode === "guided" ? (
+            <section className="mix-brief">
+              <span className="mix-eyebrow">
+                TODAY’S STUDY / 第 {variant + 1} 题
+              </span>
+              <h2>{lesson.title}</h2>
+              <p>{lesson.concept}</p>
+              <div className="mix-task-text">
+                <span>这次的任务</span>
+                <p>{lesson.prompt}</p>
+              </div>
+              <button className="mix-link-button" onClick={nextQuestion}>
+                换一个目标色 <span aria-hidden="true">↗</span>
+              </button>
+            </section>
+          ) : mode === "free" ? (
+            <section className="mix-brief">
+              <span className="mix-eyebrow">YOUR OWN COLOR</span>
+              <h2>今天想调什么颜色？</h2>
+              <p>
+                从任意颜色开始。某些屏幕色可能超出现有色板能调出的范围，接近它也是一次有用的练习。
+              </p>
+              <label className="mix-field-label" htmlFor="target-color">
+                选择目标色
+              </label>
+              <div className="mix-custom-picker">
+                <input
+                  id="target-color"
+                  type="color"
+                  value={customHex}
+                  aria-label="选择自定义目标色"
+                  onChange={(e) => applyHex(e.target.value)}
+                />
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    applyHex(hexDraft);
+                  }}
+                >
+                  <input
+                    aria-label="目标色十六进制值"
+                    value={hexDraft}
+                    onChange={(e) => setHexDraft(e.target.value)}
+                    maxLength={7}
+                    spellCheck={false}
+                  />
+                  <button type="submit">应用</button>
+                </form>
+              </div>
+              {hexError && (
+                <p role="alert" className="mix-error">
+                  {hexError}
+                </p>
+              )}
+            </section>
+          ) : (
+            <section className="mix-painting-card">
+              <img
+                src={painting.imageUrl}
+                alt={`《${painting.titleZh}》，${painting.artistZh}`}
+              />
+              <div>
+                <label className="mix-field-label" htmlFor="painting-select">
+                  挑一幅喜欢的画
+                </label>
+                <select
+                  id="painting-select"
+                  value={paintingIndex}
+                  onChange={(e) => {
+                    setPaintingIndex(Number(e.target.value));
+                    setPaintingColor(0);
+                    resetExercise();
+                  }}
+                >
+                  {FAMOUS_PAINTINGS.map((p, i) => (
+                    <option key={p.id} value={i}>
+                      {p.titleZh} · {p.artistZh}
+                    </option>
+                  ))}
+                </select>
+                <p>
+                  {painting.artistZh} · {painting.year}
+                </p>
+                <div className="mix-painting-colors">
+                  {painting.dominantColors.map((hex, i) => (
+                    <button
+                      key={`${hex}-${i}`}
+                      aria-label={`选择画作色 ${i + 1}：${hex}`}
+                      aria-pressed={paintingColor === i}
+                      onClick={() => {
+                        setPaintingColor(i);
+                        resetExercise();
+                      }}
+                      style={{ background: hex }}
+                    />
+                  ))}
+                </div>
+                <small>画作代表色为学习用示意色，不是原作实测数据。</small>
+              </div>
+            </section>
+          )}
+          <section className="mix-paper-task">
+            <span className="mix-eyebrow">TAKE IT TO PAPER</span>
+            <h3>把眼睛学到的，交给手。</h3>
+            <p>
+              {mode === "guided"
+                ? lesson.realPractice
+                : "把目标色、第一次尝试和最后结果画成 3 块并排的小色块。写一句话：这次是哪一种颜色加多了？实际用量以手边颜料的试色为准。"}
+            </p>
+            <a href="/sketch">
+              先练明暗？去素描教室 <span aria-hidden="true">↗</span>
+            </a>
+          </section>
+        </aside>
+
+        <section className="mix-lab">
+          <div className="mix-card-title">
+            <div>
+              <span className="mix-eyebrow">LOOK · MIX · COMPARE</span>
+              <h2>你的调色台</h2>
+            </div>
+            <span className="mix-live-dot">实时预览</span>
+          </div>
+          <div className="mix-comparison">
+            <div>
+              <div
+                className="mix-color-preview"
+                style={{ background: targetHex }}
+              />
+              <div className="mix-swatch-caption">
+                <strong>观察目标</strong>
+                <span>{targetHex.toUpperCase()}</span>
+              </div>
+            </div>
+            <div>
+              <div
+                className={`mix-color-preview ${!hasPaint ? "mix-empty-preview" : ""}`}
+                style={hasPaint ? { background: mixedHex } : {}}
+              >
+                {!hasPaint && (
+                  <span>
+                    选一支练习色
+                    <br />
+                    开始你的第一次尝试
+                  </span>
+                )}
+              </div>
+              <div className="mix-swatch-caption">
+                <strong>你的混合色</strong>
+                <span>
+                  {hasPaint ? mixedHex.toUpperCase() : "等待加入颜色"}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="mix-score-row">
+            <div>
+              <strong>
+                {hasPaint ? score : "—"}
+                <small> / 100</small>
+              </strong>
+              <span>
+                {!hasPaint
+                  ? "先观察，再动手"
+                  : score >= 90
+                    ? "很接近了，记住这次调整"
+                    : score >= 70
+                      ? "方向不错，试着微调"
+                      : "从明暗关系开始比较"}
+              </span>
+            </div>
+            <div className="mix-score-track" aria-hidden="true">
+              <span style={{ width: `${score}%` }} />
+            </div>
+          </div>
+          {hasPaint && (
+            <div className="mix-feedback">
+              {feedback.map((item) => (
+                <div key={item.name}>
+                  <span>{item.name}</span>
+                  <strong className={item.good ? "is-good" : ""}>
+                    {item.label}
+                  </strong>
+                  <p>{item.text}</p>
                 </div>
               ))}
             </div>
+          )}
 
-            {selected.length > 0 && (
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <span className={`text-3xl font-bold tabular-nums ${scoreClass}`}>{score}%</span>
-                  <span className="text-sm" style={{ color: 'var(--ink-2)' }}>{scoreLabel}</span>
-                </div>
-                <div className="progress-bar">
-                  <div className="progress-fill" style={{ width: `${score}%`, background: progColor }} />
-                </div>
-              </div>
-            )}
+          <div className="mix-quick-palette">
+            <span>点选练习色</span>
+            <div>
+              {recommended.map((color) => (
+                <button
+                  key={color.id}
+                  onClick={() => addColor(color)}
+                  aria-label={`加入推荐色${color.name}`}
+                >
+                  <i style={{ background: color.hex }} />
+                  <strong>{color.name}</strong>
+                  <small>+</small>
+                </button>
+              ))}
+            </div>
           </div>
-
-          {/* 操作按钮 */}
-          {selected.length > 0 && (
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => { setShowSug(!showSug); setShowAns(false) }}
-                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-medium border transition-all"
-                style={{
-                  background: showSug ? 'var(--prussian-lt)' : 'var(--card)',
-                  borderColor: showSug ? '#B0C8E0' : 'var(--border)',
-                  color: showSug ? 'var(--prussian)' : 'var(--ink-2)',
-                }}>
-                💡 调色建议
+          <div className="mix-palette-heading">
+            <h3>
+              调色盘 <small>{selected.length} 色</small>
+            </h3>
+            <div>
+              <button onClick={undo} disabled={!history.length}>
+                ↶ 撤销
               </button>
-              <button onClick={() => { setShowAns(!showAns); setShowSug(false) }}
-                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-medium border transition-all"
-                style={{
-                  background: showAns ? '#FFF8F0' : 'var(--card)',
-                  borderColor: showAns ? '#E8C4A0' : 'var(--border)',
-                  color: showAns ? 'var(--sienna)' : 'var(--ink-2)',
-                }}>
-                🔍 参考答案
+              <button
+                onClick={() => changeMixture([])}
+                disabled={!selected.length}
+              >
+                清空
               </button>
             </div>
-          )}
-
-          {showSug && suggestion && (
-            <div className="p-3.5 rounded-xl text-sm leading-relaxed"
-              style={{ background: 'var(--prussian-lt)', border: '1px solid #B0C8E0', color: 'var(--prussian)' }}>
-              <div className="font-semibold text-xs mb-1 opacity-70">专业调色建议</div>
-              {suggestion}
+          </div>
+          {!selected.length ? (
+            <div className="mix-empty-bowl">
+              点选上方练习色，把颜色加入调色盘。
+              <span>先用 2–3 色，往往更容易看清变化。</span>
             </div>
-          )}
-
-          {/* 参考答案（跨品牌最优解） */}
-          {showAns && (
-            <div className="p-4 rounded-xl space-y-3"
-              style={{ background: '#FFF8F0', border: '1.5px solid #E8C4A0' }}>
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-sm" style={{ color: 'var(--sienna-dk)' }}>参考调色方案</span>
-                <span className="badge badge-sienna text-[11px]">跨品牌最优 · {refScore}%匹配</span>
-              </div>
-              <div className="space-y-2.5">
-                {refMix.map(({ color, ratio, brand, note }) => (
-                  <div key={color.id} className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg flex-shrink-0"
-                      style={{ backgroundColor: color.hex, border: '1px solid var(--border-dk)' }} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{color.name}</span>
-                        <span className="text-[10px] px-1.5 rounded-sm font-medium"
-                          style={{ background: 'var(--parchment)', color: 'var(--ink-3)' }}>
-                          {brand}
-                        </span>
-                        <span className="text-[10px] px-1.5 rounded-sm"
-                          style={{ background: 'var(--parchment)', color: 'var(--sienna)' }}>
-                          {note}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--parchment-dk)' }}>
-                        <div className="h-full rounded-full" style={{ width: `${ratio}%`, backgroundColor: color.hex }} />
-                      </div>
-                      <span className="font-mono text-xs font-semibold w-7 text-right" style={{ color: 'var(--sienna)' }}>
-                        {ratio}%
+          ) : (
+            <div className="mix-mixture-list">
+              {selected.map(({ color, parts }) => (
+                <div className="mix-mixture-row" key={color.id}>
+                  <span className="mix-dot" style={{ background: color.hex }} />
+                  <div className="mix-mixture-control">
+                    <div>
+                      <strong>{color.name}</strong>
+                      <span>
+                        {total ? Math.round((parts / total) * 100) : 0}%
                       </span>
                     </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="20"
+                      step="0.25"
+                      value={parts}
+                      aria-label={`${color.name}份量`}
+                      onPointerDown={() => {
+                        dragging.current = true;
+                        setHistory((h) =>
+                          [...h, selected.map((c) => ({ ...c }))].slice(-40),
+                        );
+                      }}
+                      onPointerUp={() => {
+                        dragging.current = false;
+                      }}
+                      onPointerCancel={() => {
+                        dragging.current = false;
+                      }}
+                      onBlur={() => {
+                        dragging.current = false;
+                      }}
+                      onChange={(e) =>
+                        updateParts(color.id, Number(e.target.value))
+                      }
+                    />
                   </div>
-                ))}
-              </div>
-              <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
-                此方案搜索 4 个品牌共 {88} 种颜料，通过算法优化得出。实际效果因颜料批次略有差异。
-              </p>
+                  <div className="mix-parts-input">
+                    <input
+                      type="number"
+                      min="0"
+                      max="20"
+                      step="0.25"
+                      value={parts}
+                      aria-label={`${color.name}份数`}
+                      onChange={(e) =>
+                        updateParts(color.id, Number(e.target.value))
+                      }
+                    />
+                    <span>份</span>
+                  </div>
+                  <button
+                    className="mix-remove"
+                    aria-label={`移除${color.name}`}
+                    onClick={() =>
+                      changeMixture(
+                        selected.filter((c) => c.color.id !== color.id),
+                      )
+                    }
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
             </div>
           )}
-
-          {/* 调色盘 */}
-          <div className="art-card p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>
-                调色盘 {selected.length > 0 && `(${selected.length}色)`}
-              </span>
-              {selected.length > 0 && (
-                <button onClick={() => setSelected([])} className="text-xs" style={{ color: '#A03020' }}>清空</button>
+          <p className="mix-units-note">
+            “份”是练习用相对量，百分比会自动计算；不代表真实颜料的体积或重量。
+          </p>
+          <div className="mix-actions">
+            <button
+              className="mix-primary"
+              disabled={!hasPaint || !storageReady}
+              onClick={() => saveAttempt(true)}
+            >
+              检验这次调色 <span aria-hidden="true">→</span>
+            </button>
+            <button
+              disabled={!hasPaint || !storageReady}
+              onClick={() => saveAttempt()}
+            >
+              保存配方
+            </button>
+            <button
+              disabled={!hasPaint}
+              onClick={() =>
+                setHint(suggestNextColor(targetRgb, selected, palette))
+              }
+            >
+              给我一点提示
+            </button>
+          </div>
+          {hint && (
+            <div className="mix-hint" role="status">
+              <strong>试一小步</strong>
+              <p>{hint}</p>
+            </div>
+          )}
+          {status && (
+            <div className="mix-status" role="status">
+              {status}
+              {mode === "guided" && score >= 90 && (
+                <button onClick={nextQuestion}>再来一题 →</button>
               )}
             </div>
-
-            {selected.length === 0 ? (
-              <div className="text-center py-5 rounded-xl text-sm"
-                style={{ background: 'var(--parchment)', color: 'var(--ink-3)' }}>
-                从右侧颜料板点击选色 · 加入时自动稀释现有比例
-              </div>
-            ) : (
-              <div className="space-y-3 max-h-64 overflow-y-auto">
-                {selected.map(sc => {
-                  const pct  = Math.round(sc.ratio)
-                  const edit = editMap[sc.color.id]
-                  return (
-                    <div key={sc.color.id} className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <div className="w-5 h-5 rounded-md flex-shrink-0"
-                          style={{ backgroundColor: sc.color.hex, border: '1px solid var(--border-dk)' }} />
-                        <span className="text-xs flex-1 truncate" style={{ color: 'var(--ink-2)' }}>
-                          {sc.color.name}
-                        </span>
-                        {/* 手动输入百分比 */}
-                        <input
-                          ref={el => { numInputRefs.current[sc.color.id] = el }}
-                          type="number"
-                          min="1" max="99" step="1"
-                          defaultValue={pct}
-                          onChange={e => setEditMap(m => ({ ...m, [sc.color.id]: e.target.value }))}
-                          onBlur={e => commitManualInput(sc.color.id, e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') commitManualInput(sc.color.id, (e.target as HTMLInputElement).value)
-                          }}
-                          className="w-12 text-center text-xs font-mono rounded-lg py-1 focus:outline-none"
-                          style={{
-                            background: 'var(--parchment)',
-                            border: '1px solid var(--border-dk)',
-                            color: 'var(--sienna)',
-                          }}
-                        />
-                        <span className="text-xs" style={{ color: 'var(--ink-3)' }}>%</span>
-                        <button onClick={() => removeColor(sc.color.id)}
-                          className="text-xs w-4 h-4 flex items-center justify-center"
-                          style={{ color: 'var(--ink-3)' }}>✕</button>
-                      </div>
-                      {/* 非受控滑块：拖动时直接操作 DOM，释放才触发 re-render */}
-                      <input
-                        ref={el => { sliderRefs.current[sc.color.id] = el }}
-                        type="range" min="1" max="99"
-                        defaultValue={pct}
-                        onPointerDown={() => handleSliderPointerDown(sc.color.id)}
-                        onInput={e => handleSliderInput(sc.color.id, parseFloat((e.target as HTMLInputElement).value))}
-                        onPointerUp={handleSliderCommit}
-                        onTouchEnd={handleSliderCommit}
-                        className="w-full"
-                        style={{ accentColor: sc.color.hex }}
-                      />
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+          )}
+          <div className="mix-reference-toggle">
+            <button onClick={revealReference}>
+              {showReference ? "收起参考配方 −" : "卡住了？看一份参考配方 +"}
+            </button>
+            <span>
+              {mode === "guided"
+                ? "独立调到 90 分，点亮课程"
+                : "屏幕色可能超出当前色板范围"}
+            </span>
           </div>
-        </div>
-
-        {/* ── 右列：颜料色板（品牌标签页） ───────────── */}
-        <div className="art-card overflow-hidden flex flex-col" style={{ maxHeight: '820px' }}>
-          {/* 品牌标签 */}
-          <div className="flex border-b overflow-x-auto flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
-            {PAINT_BRANDS.map((brand, i) => (
+          {showReference && (
+            <div className="mix-reference">
+              <div className="mix-reference-heading">
+                <strong>
+                  {mode === "guided" ? "本题的生成配方" : "入门色板的近似配方"}
+                </strong>
+                <span>屏幕相似度 {referenceScore} 分</span>
+              </div>
+              <div className="mix-recipe-chips">
+                {reference.map((c) => (
+                  <span key={c.color.id}>
+                    <i style={{ background: c.color.hex }} />
+                    {c.color.name}{" "}
+                    <b>{Math.round((c.parts / referenceTotal) * 100)}%</b>
+                  </span>
+                ))}
+              </div>
+              <p>
+                {mode === "guided"
+                  ? "本题目标由这份配方生成，所以可以达到。看完后换一道题，再试着独立完成。"
+                  : "最多 3 色的近似搜索结果，可能无法完全达到目标。不同配方也可能得到相近的屏幕颜色。"}
+              </p>
               <button
-                key={brand.id}
-                onClick={() => setBrandTab(i)}
-                className="flex-1 py-2.5 px-2 text-center text-xs font-medium whitespace-nowrap transition-all flex-shrink-0"
-                style={{
-                  color: brandTab === i ? brand.accent : 'var(--ink-3)',
-                  background: brandTab === i ? 'var(--card)' : 'var(--parchment)',
-                  borderBottom: brandTab === i ? `2px solid ${brand.accent}` : '2px solid transparent',
+                onClick={() => {
+                  changeMixture(reference.map((c) => ({ ...c })));
+                  setAssisted(true);
                 }}
               >
-                <div className="font-semibold">{brand.name}</div>
-                <div className="text-[10px] opacity-70">{brand.nameEn}</div>
+                放到调色盘里观察
+              </button>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <section className="mix-color-library">
+        <div className="mix-library-title">
+          <div>
+            <span className="mix-eyebrow">PICK YOUR PALETTE</span>
+            <h2>少一点犹豫，多一点尝试。</h2>
+          </div>
+          <span>{shownColors.length} 个练习色</span>
+        </div>
+        <div className="mix-library-filters">
+          <div className="mix-library-tabs">
+            {[
+              {
+                id: "starter",
+                name: mode === "guided" ? "本课推荐" : "入门 12 色",
+              },
+              { id: "all", name: `全部 ${ALL_COLORS.length} 色` },
+              ...PAINT_BRANDS.map((b) => ({ id: b.id, name: b.name })),
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                aria-pressed={paletteTab === tab.id}
+                onClick={() => {
+                  setPaletteTab(tab.id);
+                  setFamily("全部色系");
+                }}
+                className={paletteTab === tab.id ? "is-active" : ""}
+              >
+                {tab.name}
               </button>
             ))}
           </div>
-
-          {/* 颜料列表 */}
-          <div className="overflow-y-auto flex-1 p-4 space-y-4">
-            <div className="text-xs" style={{ color: 'var(--ink-3)' }}>
-              点击颜色添加到调色盘（{curBrand.colors.length} 种颜料）
-            </div>
-
-            {/* 按系列分组 */}
-            {['白/黑','黄色系','橙色系','红色系','紫色系','蓝色系','绿色系','褐色系'].map(series => {
-              const seriesColors = curBrand.colors.filter(c => c.series === series)
-              if (!seriesColors.length) return null
-              return (
-                <div key={series}>
-                  <div className="text-xs font-medium mb-2 flex items-center gap-1.5"
-                    style={{ color: 'var(--ink-3)' }}>
-                    <span className="w-1.5 h-1.5 rounded-full"
-                      style={{ background: seriesColors[0].hex, display: 'inline-block' }} />
-                    {series}
-                  </div>
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {seriesColors.map(color => {
-                      const isSel = selected.some(c => c.color.id === color.id)
-                      return (
-                        <button
-                          key={color.id}
-                          onClick={() => isSel ? removeColor(color.id) : addColor(color)}
-                          title={`${color.name} (${color.nameEn})`}
-                          className="relative aspect-square color-swatch"
-                          style={{
-                            backgroundColor: color.hex,
-                            border: isSel
-                              ? `2.5px solid ${curBrand.accent}`
-                              : '1.5px solid rgba(0,0,0,0.10)',
-                            transform: isSel ? 'scale(0.88)' : undefined,
-                            boxShadow: isSel ? `0 0 0 3px ${curBrand.accent}33` : undefined,
-                          }}
-                        >
-                          {isSel && (
-                            <div className="absolute inset-0 flex items-center justify-center rounded-lg"
-                              style={{ background: 'rgba(255,255,255,0.35)' }}>
-                              <svg className="w-3 h-3 text-white drop-shadow" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                              </svg>
-                            </div>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })}
+          <div className="mix-search-row">
+            <input
+              type="search"
+              aria-label="搜索颜料名称"
+              placeholder="搜索颜色，如 群青 / blue"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <select
+              aria-label="按色系筛选"
+              value={family}
+              onChange={(e) => setFamily(e.target.value)}
+            >
+              {[
+                "全部色系",
+                ...Array.from(
+                  new Set(palette.map((c) => c.series).filter(Boolean)),
+                ),
+              ].map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
           </div>
         </div>
-      </div>
+        <div className="mix-library-grid">
+          {shownColors.map((color) => {
+            const active = selected.some((c) => c.color.id === color.id);
+            return (
+              <button
+                key={color.id}
+                onClick={() => addColor(color)}
+                className={active ? "is-selected" : ""}
+                aria-label={`加入${color.name}（${PAINT_BRANDS.find((b) => b.colors.some((c) => c.id === color.id))?.name}）`}
+              >
+                <span
+                  className="mix-library-swatch"
+                  style={{ background: color.hex }}
+                >
+                  <i>{active ? "＋1" : "+"}</i>
+                </span>
+                <strong>{color.name}</strong>
+                <small>
+                  {paletteTab === "all"
+                    ? PAINT_BRANDS.find((b) =>
+                        b.colors.some((c) => c.id === color.id),
+                      )?.name
+                    : color.nameEn}
+                </small>
+              </button>
+            );
+          })}
+        </div>
+        {!shownColors.length && (
+          <p className="mix-no-results">
+            没有找到这个颜色。换个名称，或切换到“全部色”试试。
+          </p>
+        )}
+        <p className="mix-model-note">
+          屏幕颜色仅作学习示意，品牌分类沿用原色库，并非品牌实测色卡。采用{" "}
+          <a
+            href="https://github.com/rvanwijnen/spectral.js"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Spectral.js
+          </a>{" "}
+          近似模拟颜料混合；真实颜料的着色力、透明度、光照和底色会影响结果，请用手边颜料再试色。分数是屏幕色差的练习指标。
+        </p>
+      </section>
 
-      <div className="p-4 rounded-xl text-sm leading-relaxed"
-        style={{ background: '#FEFBF0', border: '1px solid #E8D890', color: '#6A5A20' }}>
-        <span className="font-semibold">使用提示：</span>
-        点击颜料添加时，现有颜色会自动等比稀释。拖动滑块或手动输入百分比可精确调整比例，其余颜色同步变化。
-        调不出来时点击「参考答案」，会跨 4 个品牌搜索最优调色组合。
-      </div>
+      {progress.attempts.length > 0 && (
+        <section className="mix-saved">
+          <div className="mix-library-title">
+            <div>
+              <span className="mix-eyebrow">YOUR COLOR NOTES</span>
+              <h2>留下有用的那一次。</h2>
+            </div>
+            <span>最近 {progress.attempts.length} 次 · 仅存本机</span>
+          </div>
+          <div className="mix-saved-grid">
+            {progress.attempts
+              .slice(0, showAllNotes ? 20 : 6)
+              .map((attempt) => (
+                <button
+                  key={attempt.id}
+                  onClick={() => {
+                    changeMode("free");
+                    setCustomHex(attempt.targetHex);
+                    setHexDraft(attempt.targetHex);
+                    setSelected(
+                      attempt.recipe.map((r) => ({
+                        color: ALL_COLORS.find((c) => c.id === r.colorId)!,
+                        parts: r.parts,
+                      })),
+                    );
+                    setAssisted(Boolean(attempt.assisted));
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                >
+                  <div className="mix-saved-swatches">
+                    <i style={{ background: attempt.targetHex }} />
+                    <i style={{ background: attempt.mixedHex }} />
+                  </div>
+                  <div>
+                    <strong>{attempt.label}</strong>
+                    <span>
+                      {attempt.recipe.length} 色 · {attempt.score} 分
+                      {attempt.assisted ? " · 参考练习" : ""}
+                    </span>
+                  </div>
+                  <span aria-hidden="true">↗</span>
+                </button>
+              ))}
+          </div>
+          {progress.attempts.length > 6 && (
+            <button
+              className="mix-link-button"
+              aria-expanded={showAllNotes}
+              onClick={() => setShowAllNotes((v) => !v)}
+            >
+              {showAllNotes
+                ? "收起笔记"
+                : `查看全部 ${progress.attempts.length} 条笔记`}
+            </button>
+          )}
+        </section>
+      )}
     </div>
-  )
+  );
 }

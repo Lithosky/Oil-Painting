@@ -1,373 +1,747 @@
-'use client'
+"use client";
 
-import { useState, useRef, useCallback } from 'react'
-import { FAMOUS_PAINTINGS, PAINTERS, type Painting } from '@/lib/paintings'
-import { rgbToHex, rgbToHsl, analyzeColorHarmony } from '@/lib/colors'
-import { proxyImg } from '@/lib/imgProxy'
-import PaintingImage from '@/components/PaintingImage'
+import Link from "next/link";
+import { useState, useRef, useEffect } from "react";
+import {
+  FAMOUS_PAINTINGS,
+  PAINTERS,
+  PAINTING_SUBJECTS,
+  STUDY_TOPICS,
+  type Painting,
+} from "@/lib/paintings";
+import { rgbToHex, rgbToHsl, hexToRgb } from "@/lib/colors";
+import { proxyImg } from "@/lib/imgProxy";
+import PaintingImage from "@/components/PaintingImage";
 
+type RGB = [number, number, number];
 interface ExtractedColor {
-  hex: string
-  rgb: [number, number, number]
-  percentage: number
-  name: string
+  hex: string;
+  rgb: RGB;
+  percentage: number | null;
+  name: string;
 }
 
-function extractDominantColors(imageData: ImageData, k = 8): ExtractedColor[] {
-  const data = imageData.data
-  const pixels: [number, number, number][] = []
+function describeColor(rgb: RGB): string {
+  const [h, s, l] = rgbToHsl(...rgb);
+  if (l > 92) return "近白色";
+  if (l < 8) return "近黑色";
+  if (s < 15) return l > 50 ? "浅灰" : "深灰";
+  const hues: [number, number, string][] = [
+    [0, 15, "红"],
+    [15, 40, "橙红"],
+    [40, 65, "黄"],
+    [65, 90, "黄绿"],
+    [90, 150, "绿"],
+    [150, 190, "青绿"],
+    [190, 220, "青蓝"],
+    [220, 255, "蓝"],
+    [255, 290, "蓝紫"],
+    [290, 330, "紫"],
+    [330, 360, "紫红"],
+  ];
+  const hue = hues.find(([a, b]) => h >= a && h < b)?.[2] ?? "彩色";
+  return `${l > 65 ? "浅" : l < 35 ? "深" : ""}${s < 30 ? "灰" : ""}${hue}`;
+}
+
+const distance = (a: RGB, b: RGB) =>
+  (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+
+/** Small deterministic RGB clusters. Coverage refers to sampled opaque pixels only. */
+function extractDominantColors(imageData: ImageData, k = 7): ExtractedColor[] {
+  const pixels: RGB[] = [];
+  const data = imageData.data;
   for (let i = 0; i < data.length; i += 16) {
-    const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3]
-    if (a < 128) continue
-    pixels.push([r, g, b])
+    if (data[i + 3] >= 128) pixels.push([data[i], data[i + 1], data[i + 2]]);
   }
-  if (pixels.length === 0) return []
-
-  let centers: [number,number,number][] = []
-  const step = Math.floor(pixels.length / k)
-  for (let i = 0; i < k; i++) centers.push([...pixels[i * step]] as [number,number,number])
-
-  for (let iter = 0; iter < 15; iter++) {
-    const clusters: [number,number,number][][] = Array.from({ length: k }, () => [])
-    for (const px of pixels) {
-      let minD = Infinity, mi = 0
-      for (let j = 0; j < centers.length; j++) {
-        const d = (px[0]-centers[j][0])**2 + (px[1]-centers[j][1])**2 + (px[2]-centers[j][2])**2
-        if (d < minD) { minD = d; mi = j }
+  if (!pixels.length) return [];
+  const centers: RGB[] = [[...pixels[0]]];
+  while (centers.length < Math.min(k, pixels.length)) {
+    let farthest = pixels[0],
+      maxDistance = 0;
+    for (const pixel of pixels) {
+      const d = Math.min(...centers.map((c) => distance(pixel, c)));
+      if (d > maxDistance) {
+        maxDistance = d;
+        farthest = pixel;
       }
-      clusters[mi].push(px)
     }
-    let moved = false
-    for (let j = 0; j < k; j++) {
-      if (!clusters[j].length) continue
-      const nc: [number,number,number] = [
-        Math.round(clusters[j].reduce((s,p) => s+p[0],0) / clusters[j].length),
-        Math.round(clusters[j].reduce((s,p) => s+p[1],0) / clusters[j].length),
-        Math.round(clusters[j].reduce((s,p) => s+p[2],0) / clusters[j].length),
-      ]
-      if (nc[0]!==centers[j][0]||nc[1]!==centers[j][1]||nc[2]!==centers[j][2]) { moved=true; centers[j]=nc }
-    }
-    if (!moved) break
+    if (maxDistance === 0) break;
+    centers.push([...farthest]);
   }
-
-  const counts = new Array(k).fill(0)
-  for (const px of pixels) {
-    let minD = Infinity, mi = 0
-    for (let j = 0; j < centers.length; j++) {
-      const d = (px[0]-centers[j][0])**2 + (px[1]-centers[j][1])**2 + (px[2]-centers[j][2])**2
-      if (d < minD) { minD = d; mi = j }
+  const nearest = (pixel: RGB) =>
+    centers.reduce(
+      (best, center, i) =>
+        distance(pixel, center) < distance(pixel, centers[best]) ? i : best,
+      0,
+    );
+  for (let iteration = 0; iteration < 15; iteration++) {
+    const totals = centers.map(() => ({ count: 0, rgb: [0, 0, 0] as RGB }));
+    for (const pixel of pixels) {
+      const cluster = totals[nearest(pixel)];
+      cluster.count++;
+      pixel.forEach((v, i) => {
+        cluster.rgb[i] += v;
+      });
     }
-    counts[mi]++
+    let moved = false;
+    totals.forEach((cluster, i) => {
+      if (!cluster.count) return;
+      const next = cluster.rgb.map((v) => Math.round(v / cluster.count)) as RGB;
+      if (distance(next, centers[i]) > 0) moved = true;
+      centers[i] = next;
+    });
+    if (!moved) break;
   }
-
-  const total = pixels.length
-  return centers
-    .map((rgb, i) => ({ hex: rgbToHex(...rgb), rgb, percentage: Math.round((counts[i]/total)*100), name: describeColor(rgb) }))
-    .filter(c => c.percentage > 0)
-    .sort((a,b) => b.percentage - a.percentage)
-}
-
-function describeColor(rgb: [number,number,number]): string {
-  const [h, s, l] = rgbToHsl(...rgb)
-  if (l > 90) return '白色调'
-  if (l < 10) return '黑色调'
-  if (s < 15) return l > 50 ? '浅灰' : '深灰'
-  const hues: [number,number,string][] = [
-    [0,15,'红'],[15,40,'橙红'],[40,65,'黄'],[65,90,'黄绿'],
-    [90,150,'绿'],[150,190,'青绿'],[190,220,'青蓝'],[220,255,'蓝'],
-    [255,290,'蓝紫'],[290,330,'紫'],[330,360,'紫红'],
-  ]
-  const hue = hues.find(([a,b]) => h>=a && h<b)?.[2] ?? '彩色'
-  const light = l > 65 ? '浅' : l < 35 ? '深' : ''
-  const sat = s > 70 ? '鲜艳' : s < 30 ? '低饱和' : ''
-  return `${light}${sat}${hue}`
+  const counts = centers.map(() => 0);
+  pixels.forEach((pixel) => {
+    counts[nearest(pixel)]++;
+  });
+  const result = centers
+    .map((rgb, i) => ({
+      hex: rgbToHex(...rgb),
+      rgb,
+      percentage: (counts[i] / pixels.length) * 100,
+      name: describeColor(rgb),
+    }))
+    .filter((c) => c.percentage >= 0.5)
+    .sort((a, b) => b.percentage - a.percentage);
+  const total = result.reduce((sum, c) => sum + c.percentage, 0);
+  const percentages = result.map((c) =>
+    Math.floor((c.percentage / total) * 100),
+  );
+  const remainderOrder = result
+    .map((c, i) => ({
+      i,
+      fraction: (c.percentage / total) * 100 - percentages[i],
+    }))
+    .sort((a, b) => b.fraction - a.fraction);
+  const remainder = 100 - percentages.reduce((sum, p) => sum + p, 0);
+  for (let i = 0; i < remainder; i++) percentages[remainderOrder[i].i]++;
+  return result.map((c, i) => ({ ...c, percentage: percentages[i] }));
 }
 
 export default function AnalyzePage() {
-  const [mode, setMode]         = useState<'famous'|'upload'>('famous')
-  const [painting, setPainting] = useState<Painting|null>(null)
-  const [painter, setPainter]   = useState('')
-  const [search, setSearch]     = useState('')
-  const [colors, setColors]     = useState<ExtractedColor[]>([])
-  const [analyzing, setAnalyzing] = useState(false)
-  const [uploadedImg, setUploadedImg] = useState<string|null>(null)
-  const [harmony, setHarmony]   = useState<{type:string;score:number;description:string}|null>(null)
+  const [mode, setMode] = useState<"famous" | "upload">("famous");
+  const [painting, setPainting] = useState<Painting>(FAMOUS_PAINTINGS[0]);
+  const [painter, setPainter] = useState("");
+  const [subject, setSubject] = useState("");
+  const [studyTopic, setStudyTopic] = useState("");
+  const [newOnly, setNewOnly] = useState(false);
+  const [search, setSearch] = useState("");
+  const [colors, setColors] = useState<ExtractedColor[]>([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [uploadedImg, setUploadedImg] = useState<string | null>(null);
+  const [uploadName, setUploadName] = useState("我的参考图片");
+  const [error, setError] = useState("");
+  const [referenceOnly, setReferenceOnly] = useState(false);
+  const [grayscale, setGrayscale] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const source = mode === "famous" ? proxyImg(painting.imageUrl) : uploadedImg;
 
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const fileRef   = useRef<HTMLInputElement>(null)
+  useEffect(
+    () => () => {
+      if (uploadedImg) URL.revokeObjectURL(uploadedImg);
+    },
+    [uploadedImg],
+  );
 
-  const filtered = FAMOUS_PAINTINGS.filter(p => {
-    const byPainter = !painter || p.artistZh === painter
-    const bySearch  = !search  || p.titleZh.includes(search) || p.artistZh.includes(search)
-    return byPainter && bySearch
-  })
-
-  const analyzeUrl = useCallback((url: string, fallbackColors?: string[]) => {
-    setAnalyzing(true); setColors([]); setHarmony(null)
-    const canvas = canvasRef.current!
-    const ctx = canvas.getContext('2d')!
-    const img = new window.Image()
-    img.crossOrigin = 'anonymous'
+  useEffect(() => {
+    setColors([]);
+    setError("");
+    setReferenceOnly(false);
+    setAnalyzing(Boolean(source));
+    if (!source) return;
+    let active = true;
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+    const fail = () => {
+      if (!active) return;
+      active = false;
+      clearTimeout(timer);
+      if (mode === "famous") {
+        setColors(
+          painting.dominantColors.map((hex) => {
+            const rgb = hexToRgb(hex) as RGB;
+            return { hex, rgb, percentage: null, name: describeColor(rgb) };
+          }),
+        );
+        setReferenceOnly(true);
+        setError(
+          "图片暂时无法读取，下面显示预设参考色。参考色没有实测面积占比。",
+        );
+      } else
+        setError("无法读取这张图片，请重新选择有效的 JPG、PNG 或 WebP 图片。");
+      setAnalyzing(false);
+    };
+    const timer = window.setTimeout(fail, 15000);
     img.onload = () => {
-      canvas.width = 200
-      canvas.height = Math.round((img.height / img.width) * 200)
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      if (!active) return;
       try {
-        const id = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const ex = extractDominantColors(id, 8)
-        setColors(ex)
-        setHarmony(analyzeColorHarmony(ex.slice(0,5).map(c => c.rgb)))
+        if (!img.naturalWidth || !img.naturalHeight)
+          throw new Error("Empty image");
+        const scale = Math.min(
+          1,
+          200 / Math.max(img.naturalWidth, img.naturalHeight),
+        );
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) throw new Error("Canvas unavailable");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const extracted = extractDominantColors(
+          ctx.getImageData(0, 0, canvas.width, canvas.height),
+        );
+        if (!extracted.length) throw new Error("No opaque pixels");
+        setColors(extracted);
+        setAnalyzing(false);
+        active = false;
+        clearTimeout(timer);
       } catch {
-        useFallback(fallbackColors)
+        fail();
       }
-      setAnalyzing(false)
-    }
-    img.onerror = () => { useFallback(fallbackColors); setAnalyzing(false) }
-    img.src = url
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    };
+    img.onerror = fail;
+    img.src = source;
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      img.onload = null;
+      img.onerror = null;
+      img.src = "";
+    };
+  }, [source, mode, painting, retry]);
 
-  const useFallback = (hexes?: string[]) => {
-    if (!hexes?.length) return
-    const ex: ExtractedColor[] = hexes.map((hex, i) => {
-      const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16)
-      const rgb: [number,number,number] = [r,g,b]
-      return { hex, rgb, percentage: [35,25,18,12,10][i] ?? 5, name: describeColor(rgb) }
-    })
-    setColors(ex)
-    setHarmony(analyzeColorHarmony(ex.slice(0,5).map(c => c.rgb)))
-  }
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]; if (!f) return
-    const reader = new FileReader()
-    reader.onload = ev => {
-      const url = ev.target?.result as string
-      setUploadedImg(url)
-      analyzeUrl(url)
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("请选择 JPG、PNG 或 WebP 格式。");
+      return;
     }
-    reader.readAsDataURL(f)
-  }
+    if (file.size > 12 * 1024 * 1024) {
+      setError("图片超过 12 MB，请缩小后重试。");
+      return;
+    }
+    setUploadName(file.name);
+    setUploadedImg(URL.createObjectURL(file));
+  };
+  const filtered = FAMOUS_PAINTINGS.filter(
+    (p) =>
+      (!painter || p.artistZh === painter) &&
+      (!subject || p.subject === subject) &&
+      (!studyTopic || p.studyTags?.includes(studyTopic)) &&
+      (!newOnly || p.id.startsWith("aic-")) &&
+      (!search.trim() ||
+        `${p.titleZh} ${p.artistZh} ${p.title} ${p.artist}`
+          .toLowerCase()
+          .includes(search.trim().toLowerCase())),
+  );
+  const colorStyle = { color: "var(--ink-3)" };
+  const newCount = FAMOUS_PAINTINGS.filter((p) =>
+    p.id.startsWith("aic-"),
+  ).length;
+  const hasFilters = Boolean(
+    painter || subject || studyTopic || newOnly || search,
+  );
+  const clearFilters = () => {
+    setPainter("");
+    setSubject("");
+    setStudyTopic("");
+    setNewOnly(false);
+    setSearch("");
+  };
 
   return (
-    <div className="space-y-5">
-      <canvas ref={canvasRef} className="hidden" />
-
-      <div>
-        <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>画作颜色分析</h1>
-        <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>分析世界名画或上传图片，提取主要颜色与配色规律</p>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p
+            className="text-xs uppercase tracking-[0.2em] mb-2"
+            style={{ color: "var(--viridian)" }}
+          >
+            LOOK CLOSELY · 观察室
+          </p>
+          <h1
+            className="text-3xl font-semibold"
+            style={{ color: "var(--ink)" }}
+          >
+            从名画里，借一抹颜色。
+          </h1>
+          <p className="text-sm mt-2" style={colorStyle}>
+            {FAMOUS_PAINTINGS.length} 幅名画，{STUDY_TOPICS.length}{" "}
+            种观察方向。先观察明暗，再把喜欢的一笔带到调色台。
+          </p>
+        </div>
+        <Link href="/sketch" className="btn-secondary text-sm">
+          练习素描基础 ↗
+        </Link>
       </div>
-
-      {/* 模式切换 */}
-      <div className="flex gap-1.5 p-1 rounded-xl w-fit" style={{ background: 'var(--parchment)', border: '1px solid var(--border)' }}>
-        {(['famous','upload'] as const).map(m => (
-          <button key={m} onClick={() => { setMode(m); setColors([]); setHarmony(null) }}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+      <div
+        className="flex gap-1.5 p-1 rounded-xl w-fit"
+        style={{
+          background: "var(--parchment)",
+          border: "1px solid var(--border)",
+        }}
+      >
+        {(["famous", "upload"] as const).map((m) => (
+          <button
+            key={m}
+            aria-pressed={mode === m}
+            onClick={() => setMode(m)}
+            className="px-5 py-2 rounded-lg text-sm font-medium"
             style={{
-              background: mode===m ? 'var(--card)' : 'transparent',
-              color: mode===m ? 'var(--sienna)' : 'var(--ink-2)',
-              boxShadow: mode===m ? '0 1px 4px var(--shadow)' : 'none',
-            }}>
-            {m === 'famous' ? '🖼️ 世界名画' : '📤 上传图片'}
+              background: mode === m ? "var(--card)" : "transparent",
+              color: mode === m ? "var(--viridian)" : "var(--ink-2)",
+            }}
+          >
+            {m === "famous" ? "名画观察" : "上传我的参考"}
           </button>
         ))}
       </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* 左侧：选择区 */}
-        <div className="space-y-4">
-          {mode === 'famous' ? (
+      <div className="grid grid-cols-1 lg:grid-cols-[1.25fr_1fr] gap-6">
+        <div className="space-y-4 min-w-0">
+          {mode === "famous" ? (
             <>
-              {/* 搜索筛选 */}
-              <div className="flex gap-2">
+              <div className="art-card p-4 space-y-3">
+                <div className="flex flex-wrap justify-between items-center gap-2">
+                  <p className="text-sm font-semibold">今天想练什么？</p>
+                  <span className="text-xs" style={colorStyle}>
+                    先选一个目标，比看很多幅更有用
+                  </span>
+                </div>
+                <div
+                  className="flex flex-wrap gap-2"
+                  aria-label="按学习目标筛选"
+                >
+                  {["", ...STUDY_TOPICS].map((topic) => (
+                    <button
+                      key={topic || "all"}
+                      type="button"
+                      aria-pressed={studyTopic === topic}
+                      onClick={() => setStudyTopic(topic)}
+                      className="rounded-full px-3 py-1.5 text-xs transition-colors"
+                      style={{
+                        background:
+                          studyTopic === topic
+                            ? "var(--viridian)"
+                            : "var(--parchment)",
+                        color: studyTopic === topic ? "#fff" : "var(--ink-2)",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      {topic || "自由观察"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
                 <input
-                  type="text" placeholder="搜索画作或画家…"
-                  value={search} onChange={e => setSearch(e.target.value)}
-                  className="flex-1 px-3 py-2 rounded-xl text-sm focus:outline-none"
+                  aria-label="搜索画作或画家"
+                  type="search"
+                  placeholder="搜索画作或画家…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="min-w-[200px] flex-1 px-3 py-2 rounded-xl text-sm"
                   style={{
-                    background: 'var(--card)', border: '1.5px solid var(--border)',
-                    color: 'var(--ink)',
+                    background: "var(--card)",
+                    border: "1px solid var(--border)",
                   }}
                 />
-                <select value={painter} onChange={e => setPainter(e.target.value)}
-                  className="px-3 py-2 rounded-xl text-sm focus:outline-none"
-                  style={{ background: 'var(--card)', border: '1.5px solid var(--border)', color: 'var(--ink)' }}>
+                <select
+                  aria-label="按画家筛选"
+                  value={painter}
+                  onChange={(e) => setPainter(e.target.value)}
+                  className="max-w-[45%] px-2 py-2 rounded-xl text-sm"
+                  style={{
+                    background: "var(--card)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
                   <option value="">全部画家</option>
-                  {PAINTERS.map(p => <option key={p} value={p}>{p}</option>)}
+                  {PAINTERS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label="按题材筛选"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  className="px-2 py-2 rounded-xl text-sm"
+                  style={{
+                    background: "var(--card)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <option value="">全部题材</option>
+                  {PAINTING_SUBJECTS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
                 </select>
                 <button
+                  className="btn-secondary text-sm"
+                  disabled={filtered.length === 0}
                   onClick={() => {
-                    const p = FAMOUS_PAINTINGS[Math.floor(Math.random() * FAMOUS_PAINTINGS.length)]
-                    setPainting(p); setColors([]); setHarmony(null)
+                    const pool = filtered.filter((p) => p.id !== painting.id);
+                    if (pool.length)
+                      setPainting(
+                        pool[Math.floor(Math.random() * pool.length)],
+                      );
                   }}
-                  className="btn-secondary px-3 py-2 text-sm">随机</button>
+                >
+                  随机看一幅
+                </button>
               </div>
-
-              {/* 名画列表 */}
-              <div className="grid grid-cols-3 gap-2.5 max-h-72 overflow-y-auto pr-1">
-                {filtered.map(p => (
-                  <button key={p.id} onClick={() => { setPainting(p); setColors([]); setHarmony(null) }}
-                    className="rounded-xl overflow-hidden text-left transition-all painting-thumb"
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <p style={colorStyle} role="status">
+                  找到 {filtered.length} 幅 / 共 {FAMOUS_PAINTINGS.length} 幅
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    aria-pressed={newOnly}
+                    onClick={() => setNewOnly((v) => !v)}
+                    className="rounded-full px-3 py-1.5"
                     style={{
-                      border: `2px solid ${painting?.id===p.id ? 'var(--sienna)' : 'var(--border)'}`,
-                      boxShadow: painting?.id===p.id ? '0 0 0 3px rgba(184,98,26,0.15)' : 'none',
-                    }}>
-                    <div className="relative h-20">
-                      <PaintingImage src={proxyImg(p.imageUrl)} alt={p.titleZh}
-                        dominantColors={p.dominantColors}
-                        className="w-full h-full object-cover"
-                        referrerPolicy="no-referrer" loading="lazy" />
-                    </div>
-                    <div className="p-1.5" style={{ background: 'var(--parchment)' }}>
-                      <div className="text-xs font-medium truncate" style={{ color: 'var(--ink)' }}>{p.titleZh}</div>
-                      <div className="text-[10px] truncate mt-0.5" style={{ color: 'var(--ink-3)' }}>{p.artistZh}</div>
+                      background: newOnly
+                        ? "var(--viridian-lt)"
+                        : "var(--parchment)",
+                      color: "var(--viridian)",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    {newOnly ? "✓ " : "+ "}新增馆藏 {newCount} 幅
+                  </button>
+                  {hasFilters && (
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="underline"
+                      style={colorStyle}
+                    >
+                      清除筛选
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div
+                className="grid grid-cols-3 sm:grid-cols-5 gap-2 max-h-64 overflow-y-auto p-1"
+                aria-label="名画列表"
+              >
+                {filtered.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setPainting(p)}
+                    title={`${p.titleZh} · ${p.artistZh}`}
+                    aria-pressed={painting.id === p.id}
+                    className="rounded-lg overflow-hidden text-left painting-thumb"
+                    style={{
+                      border: `2px solid ${painting.id === p.id ? "var(--viridian)" : "var(--border)"}`,
+                    }}
+                  >
+                    <PaintingImage
+                      src={proxyImg(p.imageUrl)}
+                      alt={p.titleZh}
+                      dominantColors={p.dominantColors}
+                      className="w-full h-20 object-cover"
+                      loading="lazy"
+                    />
+                    <div
+                      className="p-1.5 text-[11px]"
+                      style={{ background: "var(--card)" }}
+                    >
+                      <p className="truncate">{p.titleZh}</p>
+                      <p
+                        className="truncate mt-0.5 text-[10px]"
+                        style={colorStyle}
+                      >
+                        {p.subject} · {p.studyTags?.[0]}
+                      </p>
                     </div>
                   </button>
                 ))}
               </div>
-              <div className="text-xs" style={{ color: 'var(--ink-3)' }}>共 {filtered.length} 幅名画</div>
-
-              {painting && (
-                <div className="art-card p-3 flex items-center gap-3">
-                  <PaintingImage src={proxyImg(painting.imageUrl)} alt={painting.titleZh}
-                    dominantColors={painting.dominantColors}
-                    className="w-14 h-14 object-cover rounded-xl flex-shrink-0"
-                    referrerPolicy="no-referrer" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-sm truncate" style={{ color: 'var(--ink)' }}>{painting.titleZh}</div>
-                    <div className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>{painting.artistZh} · {painting.year}</div>
-                    <div className="flex gap-1 mt-1">
-                      {painting.dominantColors.map(hex => (
-                        <div key={hex} className="w-4 h-4 rounded-md border"
-                          style={{ backgroundColor: hex, borderColor: 'var(--border)' }} />
-                      ))}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => analyzeUrl(proxyImg(painting.imageUrl), painting.dominantColors)}
-                    disabled={analyzing}
-                    className="btn-primary text-sm px-4 py-2 flex-shrink-0"
-                    style={{ opacity: analyzing ? 0.6 : 1 }}>
-                    {analyzing ? '分析中…' : '分析'}
-                  </button>
-                </div>
+              {!filtered.length && (
+                <p className="text-sm" style={colorStyle}>
+                  没有找到画作，试试其他关键词。
+                </p>
               )}
             </>
           ) : (
-            <div className="space-y-4">
-              <div onClick={() => fileRef.current?.click()}
-                className="border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all hover:border-[var(--sienna)]"
+            <>
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="w-full border-2 border-dashed rounded-2xl p-7 text-center"
                 style={{
-                  borderColor: 'var(--border-dk)',
-                  background: 'var(--parchment)',
-                  color: 'var(--ink-3)',
+                  borderColor: "var(--border-dk)",
+                  background: "var(--parchment)",
                 }}
               >
-                <div className="text-4xl mb-2">📤</div>
-                <div className="font-medium" style={{ color: 'var(--ink-2)' }}>点击上传图片</div>
-                <div className="text-sm mt-1">支持 JPG、PNG、WebP</div>
+                <span className="block font-medium">选择一张想画的图片</span>
+                <span className="block text-xs mt-2" style={colorStyle}>
+                  JPG、PNG、WebP · 最大 12 MB · 图片仅在本机浏览器中处理
+                </span>
+              </button>
+              <input
+                aria-label="上传参考图片"
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </>
+          )}
+          {source && (
+            <div className="art-card overflow-hidden">
+              <div className="flex items-center justify-between gap-2 px-4 py-3">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold truncate">
+                    {mode === "famous" ? painting.titleZh : uploadName}
+                  </h2>
+                  {mode === "famous" && (
+                    <p className="text-xs mt-1" style={colorStyle}>
+                      {painting.artistZh} · {painting.year}
+                    </p>
+                  )}
+                </div>
+                <button
+                  aria-pressed={grayscale}
+                  onClick={() => setGrayscale((v) => !v)}
+                  className="btn-secondary text-xs shrink-0"
+                >
+                  {grayscale ? "恢复彩色" : "查看黑白"}
+                </button>
               </div>
-              <input ref={fileRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
-              {uploadedImg && (
-                <div className="art-card overflow-hidden">
-                  <img src={uploadedImg} alt="上传图片" className="w-full max-h-56 object-contain"
-                    style={{ background: 'var(--parchment)' }} />
+              <PaintingImage
+                key={`${source}-${retry}`}
+                src={source}
+                alt={mode === "famous" ? painting.titleZh : uploadName}
+                dominantColors={
+                  mode === "famous" ? painting.dominantColors : ["#DEDACF"]
+                }
+                className="w-full h-72 sm:h-96 object-contain"
+                style={{
+                  background: "var(--parchment)",
+                  filter: grayscale ? "grayscale(1)" : undefined,
+                }}
+              />
+              <p className="p-4 text-xs leading-relaxed" style={colorStyle}>
+                {grayscale
+                  ? "眯起眼看：最亮和最暗的区域在哪里？先用铅笔画出亮、中、暗三块，再回到彩色观察。"
+                  : "先找面积最大的颜色，再找最亮的地方。选右侧一个颜色，试着亲手调出来。"}
+              </p>
+              {mode === "famous" && (
+                <div className="px-4 pb-4 space-y-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {[painting.subject, ...(painting.studyTags ?? [])]
+                      .filter(Boolean)
+                      .map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full px-2.5 py-1 text-[11px]"
+                          style={{
+                            background: "var(--parchment)",
+                            color: "var(--ink-2)",
+                          }}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                  </div>
+                  {painting.sourceUrl && (
+                    <p
+                      className="text-[11px] leading-relaxed"
+                      style={colorStyle}
+                    >
+                      图片来源：
+                      <a
+                        href={painting.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline"
+                      >
+                        {painting.museum} ↗
+                      </a>
+                      {" · "}
+                      <a
+                        href={painting.licenseUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline"
+                      >
+                        {painting.license}
+                      </a>
+                    </p>
+                  )}
                 </div>
               )}
             </div>
           )}
         </div>
-
-        {/* 右侧：分析结果 */}
-        <div className="space-y-4">
-          {analyzing ? (
-            <div className="art-card flex items-center justify-center h-64">
-              <div className="text-center space-y-3">
-                <div className="w-10 h-10 border-4 rounded-full animate-spin mx-auto"
-                  style={{ borderColor: 'var(--parchment-dk)', borderTopColor: 'var(--sienna)' }} />
-                <div className="text-sm" style={{ color: 'var(--ink-3)' }}>正在提取颜色…</div>
-              </div>
-            </div>
-          ) : colors.length > 0 ? (
-            <>
-              {/* 颜色条 */}
-              <div className="art-card p-5 space-y-4">
-                <div className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>主要颜色分布</div>
-                <div className="h-10 rounded-xl overflow-hidden flex shadow-sm"
-                  style={{ border: '1px solid var(--border)' }}>
-                  {colors.map((c, i) => (
-                    <div key={i} className="h-full" style={{ width: `${c.percentage}%`, backgroundColor: c.hex }}
-                      title={`${c.name}: ${c.percentage}%`} />
-                  ))}
-                </div>
-                <div className="space-y-2.5">
-                  {colors.map((c, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg flex-shrink-0 shadow-sm"
-                        style={{ backgroundColor: c.hex, border: '1px solid var(--border-dk)' }} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-medium" style={{ color: 'var(--ink)' }}>{c.name}</span>
-                          <span className="font-mono text-xs" style={{ color: 'var(--ink-3)' }}>{c.hex.toUpperCase()}</span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <div className="flex-1 progress-bar h-1.5">
-                            <div className="progress-fill" style={{ width: `${c.percentage}%`, backgroundColor: c.hex }} />
-                          </div>
-                          <span className="text-xs w-7 text-right" style={{ color: 'var(--sienna)' }}>{c.percentage}%</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* 配色分析 */}
-              {harmony && (
-                <div className="art-card p-5 space-y-3">
-                  <div className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>配色分析</div>
-                  <div className="flex items-center gap-4">
-                    {/* 圆形评分 */}
-                    <div className="relative w-20 h-20 flex-shrink-0">
-                      <svg className="w-20 h-20 -rotate-90" viewBox="0 0 72 72">
-                        <circle cx="36" cy="36" r="28" fill="none" stroke="var(--parchment-dk)" strokeWidth="8" />
-                        <circle cx="36" cy="36" r="28" fill="none"
-                          stroke={harmony.score>=80 ? '#3C7060' : harmony.score>=60 ? '#B8621A' : '#9A7020'}
-                          strokeWidth="8"
-                          strokeDasharray="175.9"
-                          strokeDashoffset={175.9 * (1 - harmony.score / 100)}
-                          strokeLinecap="round"
-                          style={{ transition: 'stroke-dashoffset 0.8s ease' }}
-                        />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-lg font-bold" style={{ color: 'var(--ink)' }}>{harmony.score}</span>
-                      </div>
-                    </div>
-                    <div className="flex-1">
-                      <span className="badge badge-sienna mb-2 inline-block">{harmony.type}</span>
-                      <p className="text-sm leading-relaxed" style={{ color: 'var(--ink-2)' }}>{harmony.description}</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    {colors.slice(0,6).map((c,i) => (
-                      <div key={i} className="w-8 h-8 rounded-full border-2 border-white shadow-sm"
-                        style={{ backgroundColor: c.hex }} title={c.hex} />
-                    ))}
-                  </div>
-                </div>
+        <div className="space-y-4" aria-live="polite">
+          {error && (
+            <div
+              role="alert"
+              className="rounded-xl p-4 text-sm leading-relaxed"
+              style={{
+                background: "var(--parchment)",
+                border: "1px solid var(--border-dk)",
+              }}
+            >
+              {error}
+              {referenceOnly && (
+                <button
+                  onClick={() => setRetry((n) => n + 1)}
+                  className="underline ml-2"
+                >
+                  重新读取
+                </button>
               )}
+            </div>
+          )}
+          {analyzing ? (
+            <div
+              role="status"
+              className="art-card p-12 text-center text-sm"
+              style={colorStyle}
+            >
+              正在从图片中提取颜色…
+            </div>
+          ) : colors.length ? (
+            <>
+              <div className="art-card p-5 space-y-4">
+                <div>
+                  <h2 className="font-semibold">
+                    {referenceOnly ? "参考色板" : "这幅画的主要色群"}
+                  </h2>
+                  <p
+                    className="text-xs leading-relaxed mt-1.5"
+                    style={colorStyle}
+                  >
+                    {referenceOnly
+                      ? "作品资料中的预设色板，可作为练习灵感。"
+                      : "对缩小后的图片进行颜色聚类；占比为近似值，已四舍五入。提取结果保留原图色彩。"}
+                  </p>
+                </div>
+                <div
+                  className="h-14 rounded-xl overflow-hidden flex"
+                  style={{ border: "1px solid var(--border)" }}
+                >
+                  {colors.map((c, i) => (
+                    <div
+                      key={i}
+                      style={{ flex: c.percentage ?? 1, background: c.hex }}
+                      title={`${c.name}${c.percentage === null ? "" : ` · 约 ${c.percentage}%`}`}
+                    />
+                  ))}
+                </div>
+                <div className="space-y-1">
+                  {colors.map((c, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 py-2 border-b last:border-b-0"
+                      style={{ borderColor: "var(--border)" }}
+                    >
+                      <div
+                        className="w-10 h-10 rounded-xl shrink-0"
+                        style={{
+                          background: c.hex,
+                          border: "1px solid var(--border)",
+                        }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">
+                          {c.name}
+                          {c.percentage !== null && (
+                            <span className="text-xs ml-2" style={colorStyle}>
+                              约 {c.percentage}%
+                            </span>
+                          )}
+                        </p>
+                        <p
+                          className="text-xs font-mono mt-0.5"
+                          style={colorStyle}
+                        >
+                          {c.hex.toUpperCase()}
+                        </p>
+                      </div>
+                      <Link
+                        href={`/mix?target=${encodeURIComponent(c.hex)}`}
+                        className="btn-secondary text-xs px-3 py-2"
+                      >
+                        练这个色 ↗
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div
+                className="rounded-2xl p-5 space-y-3"
+                style={{
+                  background: "var(--viridian-lt)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <p
+                  className="text-xs tracking-wider font-semibold"
+                  style={{ color: "var(--viridian)" }}
+                >
+                  把观察变成练习 · 5 分钟
+                </p>
+                {mode === "famous" && painting.studyPrompt && (
+                  <div
+                    className="rounded-xl p-3.5"
+                    style={{ background: "var(--card)" }}
+                  >
+                    <p
+                      className="text-xs font-semibold"
+                      style={{ color: "var(--viridian)" }}
+                    >
+                      这一幅，重点看这里
+                    </p>
+                    <p
+                      className="text-sm leading-relaxed mt-2"
+                      style={{ color: "var(--ink-2)" }}
+                    >
+                      {painting.studyPrompt}
+                    </p>
+                  </div>
+                )}
+                <ol
+                  className="text-sm leading-relaxed space-y-2 list-decimal pl-5"
+                  style={{ color: "var(--ink-2)" }}
+                >
+                  <li>切到黑白，用铅笔概括亮、中、暗三块。</li>
+                  <li>回到彩色，选一个主色，在调色台尝试 2–3 种颜料。</li>
+                  <li>在纸上涂一块真实色样，比较它是偏亮、偏灰，还是偏冷。</li>
+                </ol>
+                <p className="text-xs leading-relaxed" style={colorStyle}>
+                  屏幕颜色会受图片和显示器影响。数字练习用于训练观察，实际颜料要通过小色样校准。
+                </p>
+              </div>
             </>
           ) : (
-            <div className="art-card flex items-center justify-center h-64">
-              <div className="text-center" style={{ color: 'var(--ink-3)' }}>
-                <div className="text-5xl mb-3 opacity-40">🎨</div>
-                <div className="text-sm">选择一幅画或上传图片<br />开始颜色分析</div>
+            !analyzing &&
+            !error && (
+              <div
+                className="art-card p-12 text-center text-sm"
+                style={colorStyle}
+              >
+                上传图片后，主色会出现在这里。
+                <br />
+                <span className="block mt-2">从一块颜色开始，就很好。</span>
               </div>
-            </div>
+            )
           )}
         </div>
       </div>
     </div>
-  )
+  );
 }

@@ -1,44 +1,61 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
+import { useState } from "react";
 
 interface Props {
-  src: string
-  alt: string
-  dominantColors: string[]
-  className?: string
-  style?: React.CSSProperties
-  referrerPolicy?: React.HTMLAttributeReferrerPolicy
-  loading?: 'lazy' | 'eager'
-  title?: string
+  src: string;
+  alt: string;
+  dominantColors: string[];
+  className?: string;
+  style?: React.CSSProperties;
+  referrerPolicy?: React.HTMLAttributeReferrerPolicy;
+  loading?: "lazy" | "eager";
+  title?: string;
 }
 
-/**
- * Renders a painting image with a fallback color-stripe mosaic
- * (using the painting's dominant colors) when the image fails to load.
- */
+/** Keep failed references visibly distinct from an actual painting. */
 export default function PaintingImage({
-  src, alt, dominantColors, className, style, referrerPolicy, loading, title,
+  src,
+  alt,
+  dominantColors,
+  className,
+  style,
+  referrerPolicy,
+  loading,
+  title,
 }: Props) {
-  const [error, setError] = useState(false)
-
-  if (error) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  if (failedSrc === src) {
     return (
       <div
+        role="img"
+        aria-label={`${alt}：图片暂不可用，显示参考色板`}
         className={className}
-        style={{ display: 'flex', overflow: 'hidden', ...style }}
-        title={title ?? alt}
-        aria-label={alt}
+        style={{
+          display: "flex",
+          overflow: "hidden",
+          position: "relative",
+          ...style,
+        }}
+        title={title ?? `${alt} · 图片暂不可用`}
       >
         {dominantColors.map((color, i) => (
-          <div key={i} style={{ flex: 1, backgroundColor: color, minWidth: 0 }} />
+          <div key={i} style={{ flex: 1, background: color, minWidth: 0 }} />
         ))}
+        <span className="absolute inset-0 flex items-center justify-center text-center p-1">
+          <span
+            className="rounded px-1 py-0.5 text-[10px]"
+            style={{ background: "#FFFFFFDE", color: "#344438" }}
+          >
+            参考色板
+          </span>
+        </span>
       </div>
-    )
+    );
   }
-
   return (
     <img
+      key={src}
       src={src}
       alt={alt}
       className={className}
@@ -46,7 +63,8 @@ export default function PaintingImage({
       referrerPolicy={referrerPolicy}
       loading={loading}
       title={title}
-      onError={() => setError(true)}
+      onError={() => setFailedSrc(src)}
+      onLoad={() => setFailedSrc(null)}
     />
-  )
+  );
 }

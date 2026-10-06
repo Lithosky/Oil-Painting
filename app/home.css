@@ -1,0 +1,977 @@
+.home-studio {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+.home-greeting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+.eyebrow,
+.section-overline {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  color: #939b8c;
+  line-height: 1.6;
+}
+.eyebrow {
+  margin: 0 0 8px;
+}
+.home-greeting h1 {
+  font-size: 25px;
+  font-weight: 550;
+  letter-spacing: 1px;
+  line-height: 1.4;
+  margin: 0;
+}
+.greeting-tag {
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #839077;
+  align-self: flex-end;
+  margin-bottom: 4px;
+}
+.studio-hero {
+  display: grid;
+  grid-template-columns: 1.12fr 1fr;
+  border: 1px solid #dde3d4;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #edf0e5;
+  min-height: 358px;
+}
+.hero-copy {
+  padding: 34px 22px 30px 33px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.hero-kicker {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #788967;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.hero-kicker > span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #80905f;
+}
+.hero-copy h2 {
+  font-family: "Songti SC", "STSong", "Noto Serif SC", Georgia, serif;
+  font-size: clamp(25px, 2.55vw, 40px);
+  font-weight: 600;
+  line-height: 1.7;
+  letter-spacing: 1px;
+  margin: 17px 0 12px;
+  color: #2c4935;
+}
+.hero-copy p {
+  font-size: 12px;
+  line-height: 1.95;
+  margin: 0;
+  color: #7c8771;
+}
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-top: 23px;
+}
+.hero-actions .btn-primary {
+  font-size: 11px;
+  padding: 10px 17px;
+}
+.hero-text-link {
+  font-size: 11px;
+  color: #576c48;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.hero-caption {
+  font-size: 8px;
+  color: #96a08a;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 24px;
+}
+.hero-caption i {
+  height: 2px;
+  width: 2px;
+  background: #a2ab96;
+  border-radius: 50%;
+}
+.hero-art {
+  position: relative;
+  background: #e5e9d9;
+  padding: 26px 32px 21px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  isolation: isolate;
+}
+.hero-art:before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    #78835f05 4px
+  );
+  z-index: -1;
+}
+.hero-art-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 7px;
+  letter-spacing: 2px;
+  color: #8c987a;
+  margin: 0 5px 12px;
+}
+.hero-art-label span {
+  font-size: 8px;
+  letter-spacing: 3px;
+}
+.painting-mat {
+  position: relative;
+  background: #f4f2e6;
+  padding: 10px;
+  box-shadow: 2px 6px 16px #47563317;
+  transform: rotate(-3deg);
+  width: 100%;
+  height: 232px;
+  overflow: hidden;
+}
+.painting-mat img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 46%;
+}
+.painting-signature {
+  position: absolute;
+  right: 19px;
+  bottom: 18px;
+  color: #fff;
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 9px;
+  text-shadow: 0 1px 4px #000;
+}
+.hero-swatch-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  margin: 20px 0 0;
+}
+.hero-swatch-note > div {
+  display: flex;
+  padding: 5px;
+  background: #f5f4e9;
+  box-shadow: 0 3px 6px #45573510;
+  transform: rotate(3deg);
+}
+.hero-swatch-note i {
+  display: block;
+  width: 21px;
+  height: 23px;
+}
+.hero-swatch-note > span {
+  font-family: "Songti SC", "STSong", serif;
+  color: #889775;
+  font-size: 10px;
+  letter-spacing: 0.4px;
+}
+.section-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 17px;
+}
+.section-heading h2 {
+  font-size: 17px;
+  font-weight: 550;
+  margin: 4px 0 0;
+}
+.section-heading h2 small {
+  font-size: 10px;
+  font-weight: 400;
+  color: #8d9784;
+  margin-left: 13px;
+}
+.daily-count {
+  font-size: 10px;
+  color: #829073;
+  padding-bottom: 1px;
+  white-space: nowrap;
+}
+.daily-track {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 10px;
+}
+.daily-step {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding: 23px 15px 18px 22px;
+}
+.daily-step + .daily-step {
+  border-left: 1px solid #eaede5;
+}
+.step-number {
+  font-family: Georgia, serif;
+  font-size: 25px;
+  font-style: italic;
+  color: #c3cdb6;
+  line-height: 1.1;
+}
+.step-copy {
+  flex: 1;
+  min-width: 0;
+}
+.step-copy h3 {
+  font-size: 12px;
+  color: #41563b;
+  font-weight: 550;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.step-copy h3 svg {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.step-copy a:hover svg {
+  opacity: 1;
+}
+.step-copy p {
+  font-size: 10px;
+  color: #8e9787;
+  line-height: 1.8;
+  margin: 7px 0 10px;
+}
+.step-copy > span {
+  font-size: 9px;
+  color: #a0a793;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.step-check {
+  border: 1px solid #d1d9c6;
+  background: white;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  padding: 0;
+  margin-top: 1px;
+}
+.daily-step.is-done {
+  background: #f4f7ef;
+}
+.is-done .step-check {
+  background: #507747;
+  border-color: #507747;
+  color: #fff;
+}
+.daily-footnote {
+  font-size: 9px;
+  color: #939d87;
+  margin: 8px 0 0;
+}
+.learning-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.learning-card {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
+  color: var(--ink);
+}
+.learning-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 25px #384d3910;
+}
+.learning-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 19px 23px 0;
+  color: #89987b;
+}
+.course-category {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+}
+.course-art {
+  height: 125px;
+  margin: 8px 18px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.color-study {
+  gap: 13px;
+}
+.color-study > span {
+  width: 43px;
+  height: 73px;
+  display: block;
+  border-radius: 46% 42% 43% 35%;
+  box-shadow:
+    inset -4px -6px 9px #0000000e,
+    inset 3px 3px 7px #ffffff32;
+  position: relative;
+}
+.color-study > span:after {
+  content: "";
+  position: absolute;
+  inset: 6px 8px 8px;
+  background: repeating-linear-gradient(
+    92deg,
+    transparent,
+    transparent 3px,
+    #ffffff16 4px,
+    transparent 5px
+  );
+  border-radius: 50%;
+  transform: rotate(8deg);
+}
+.sketch-study {
+  margin-top: 0;
+  height: 133px;
+}
+.sketch-study svg {
+  height: 100%;
+  width: 100%;
+}
+.new-tag {
+  font-size: 9px;
+  color: #8c9375;
+  background: #f0f2e8;
+  border: 1px solid #e2e6d7;
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+.course-info {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  padding: 0 23px 19px;
+}
+.course-icon {
+  width: 36px;
+  height: 36px;
+  background: #f0f2e9;
+  display: grid;
+  place-items: center;
+  color: #667d57;
+  border-radius: 9px;
+}
+.course-info h3 {
+  font-size: 17px;
+  font-weight: 550;
+  margin: 0 0 4px;
+}
+.course-info p {
+  font-size: 10px;
+  color: #8a957e;
+  margin: 0;
+}
+.course-tags {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 13px 23px;
+  border-top: 1px solid #edf0e7;
+  background: #fdfefb;
+}
+.course-tags > span {
+  font-size: 9px;
+  color: #859176;
+  border: 1px solid #e7ebdf;
+  padding: 1px 7px;
+  border-radius: 3px;
+}
+.course-tags b {
+  font-size: 9px;
+  font-weight: 500;
+  color: #627954;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.home-bottom-grid {
+  display: grid;
+  grid-template-columns: 1.65fr 1fr;
+  gap: 20px;
+}
+.observation-card {
+  background: #f0f2e9;
+  border-radius: 10px;
+  display: flex;
+  gap: 22px;
+  padding: 22px;
+  border: 1px solid #e0e5d7;
+}
+.observation-card > img {
+  width: 36%;
+  object-fit: cover;
+  border-radius: 5px;
+  min-height: 165px;
+}
+.observation-card > div {
+  padding-top: 5px;
+  align-self: center;
+}
+.observation-card h2,
+.practice-record h2 {
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.6;
+  margin: 9px 0 8px;
+}
+.observation-card p {
+  font-size: 10px;
+  color: #849078;
+  line-height: 1.9;
+  margin: 0 0 14px;
+}
+.underlined-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: #59704c;
+  font-size: 10px;
+  border-bottom: 1px solid #a6b299;
+  padding-bottom: 4px;
+}
+.practice-record {
+  padding: 23px 25px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.practice-record h2 {
+  margin-bottom: 15px;
+}
+.record-numbers {
+  display: flex;
+  gap: 35px;
+}
+.record-numbers > div {
+  display: flex;
+  flex-direction: column;
+}
+.record-numbers b {
+  font-family: Georgia, serif;
+  font-size: 30px;
+  font-weight: 400;
+  color: #698257;
+  line-height: 1.3;
+}
+.record-numbers span {
+  font-size: 8px;
+  color: #98a089;
+  margin-top: 3px;
+}
+.practice-record > p {
+  font-size: 9px;
+  line-height: 1.8;
+  color: #9aa28f;
+  border-top: 1px solid #edf0e7;
+  padding-top: 14px;
+  margin-top: 17px;
+}
+@media (min-width: 1500px) {
+  .studio-hero {
+    min-height: 410px;
+  }
+  .hero-copy {
+    padding: 44px;
+  }
+  .hero-art {
+    padding: 30px 45px;
+  }
+  .painting-mat {
+    height: 280px;
+  }
+  .hero-copy h2 {
+    font-size: 41px;
+  }
+}
+@media (max-width: 1150px) {
+  .hero-copy {
+    padding: 26px;
+  }
+  .hero-art {
+    padding: 23px;
+  }
+  .hero-copy h2 {
+    font-size: 28px;
+  }
+  .hero-caption {
+    font-size: 7px;
+    gap: 5px;
+  }
+  .hero-swatch-note > span {
+    display: none;
+  }
+  .daily-step {
+    padding: 19px 13px;
+    gap: 9px;
+  }
+  .step-number {
+    font-size: 23px;
+  }
+  .home-bottom-grid {
+    grid-template-columns: 1.4fr 1fr;
+  }
+  .observation-card {
+    gap: 15px;
+    padding: 18px;
+  }
+  .observation-card h2 {
+    font-size: 17px;
+  }
+  .course-tags {
+    padding: 12px 19px;
+    gap: 4px;
+  }
+  .course-tags > span {
+    padding: 2px 5px;
+    font-size: 8px;
+  }
+  .course-info {
+    padding: 0 19px 19px;
+  }
+  .course-info p {
+    font-size: 9px;
+  }
+}
+@media (max-width: 950px) and (min-width: 761px) {
+  .studio-hero {
+    grid-template-columns: 1.1fr 1fr;
+  }
+  .hero-copy {
+    padding: 23px 15px 23px 23px;
+  }
+  .hero-copy h2 {
+    font-size: 24px;
+  }
+  .hero-art {
+    padding: 22px 18px;
+  }
+  .painting-mat {
+    height: 210px;
+  }
+  .hero-actions {
+    gap: 13px;
+  }
+  .hero-caption {
+    gap: 4px;
+  }
+  .greeting-tag {
+    display: none;
+  }
+  .daily-step {
+    padding: 16px 11px;
+    gap: 7px;
+  }
+  .step-number {
+    display: none;
+  }
+  .step-copy p {
+    font-size: 9px;
+  }
+  .section-heading h2 small {
+    display: none;
+  }
+  .home-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+  .observation-card > img {
+    min-height: 125px;
+    max-height: 170px;
+  }
+  .course-tags b {
+    display: none;
+  }
+  .course-info {
+    gap: 8px;
+  }
+  .course-info p {
+    line-height: 1.8;
+  }
+  .color-study {
+    gap: 9px;
+  }
+  .color-study > span {
+    width: 35px;
+    height: 65px;
+  }
+  .course-info h3 {
+    font-size: 16px;
+  }
+}
+@media (max-width: 760px) {
+  .home-studio {
+    gap: 26px;
+  }
+  .home-greeting h1 {
+    font-size: 23px;
+  }
+  .greeting-tag {
+    display: none;
+  }
+  .eyebrow {
+    font-size: 8px;
+  }
+  .studio-hero {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+  .hero-copy {
+    padding: 27px;
+  }
+  .hero-copy h2 {
+    font-size: 31px;
+    line-height: 1.6;
+  }
+  .hero-copy p {
+    font-size: 12px;
+  }
+  .hero-caption {
+    font-size: 8px;
+    padding-top: 20px;
+  }
+  .hero-art {
+    padding: 20px 32px;
+  }
+  .hero-art-label {
+    margin-bottom: 14px;
+  }
+  .painting-mat {
+    height: 195px;
+    transform: rotate(-2deg);
+  }
+  .hero-swatch-note {
+    position: absolute;
+    right: 26px;
+    bottom: 16px;
+  }
+  .hero-swatch-note > div {
+    padding: 4px;
+  }
+  .hero-swatch-note i {
+    height: 20px;
+    width: 22px;
+  }
+  .hero-art-label span {
+    display: block;
+  }
+  .section-heading h2 {
+    font-size: 17px;
+  }
+  .section-heading h2 small {
+    display: none;
+  }
+  .section-overline {
+    font-size: 8px;
+    letter-spacing: 1.6px;
+  }
+  .daily-track {
+    grid-template-columns: 1fr;
+  }
+  .daily-step {
+    padding: 18px 20px;
+    gap: 16px;
+  }
+  .daily-step + .daily-step {
+    border-left: 0;
+    border-top: 1px solid #eaede5;
+  }
+  .step-number {
+    font-size: 28px;
+  }
+  .step-copy p {
+    margin: 4px 0 7px;
+    font-size: 11px;
+  }
+  .step-copy h3 {
+    font-size: 13px;
+  }
+  .step-copy h3 svg {
+    opacity: 1;
+  }
+  .step-copy > span {
+    font-size: 9px;
+  }
+  .step-check {
+    width: 24px;
+    height: 24px;
+    margin-left: 6px;
+  }
+  .daily-footnote {
+    font-size: 9px;
+  }
+  .learning-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .course-art {
+    height: 128px;
+  }
+  .color-study {
+    gap: 15px;
+  }
+  .color-study > span {
+    width: 46px;
+  }
+  .course-info h3 {
+    font-size: 18px;
+  }
+  .course-info p {
+    font-size: 11px;
+  }
+  .course-tags {
+    gap: 7px;
+  }
+  .course-tags > span {
+    font-size: 9px;
+  }
+  .course-tags b {
+    font-size: 10px;
+  }
+  .home-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+  .observation-card {
+    padding: 20px;
+    gap: 20px;
+  }
+  .observation-card > img {
+    width: 34%;
+    min-height: 170px;
+  }
+  .observation-card h2 {
+    font-size: 19px;
+  }
+  .observation-card p {
+    font-size: 11px;
+  }
+  .practice-record {
+    padding: 24px;
+  }
+  .record-numbers {
+    gap: 55px;
+  }
+  .record-numbers span {
+    font-size: 10px;
+  }
+  .practice-record > p {
+    font-size: 11px;
+  }
+  .home-greeting {
+    gap: 10px;
+  }
+}
+/* Keep instructional copy readable at laptop sizes. */
+.hero-copy p {
+  font-size: 13px;
+  color: #67755d;
+}
+.hero-actions .btn-primary,
+.hero-text-link {
+  font-size: 12px;
+}
+.hero-caption {
+  font-size: 9px;
+  color: #718162;
+}
+.step-copy h3 {
+  font-size: 13px;
+}
+.step-copy p {
+  font-size: 11px;
+  color: #75816b;
+}
+.step-copy > span {
+  font-size: 10px;
+  color: #7f8a75;
+}
+.daily-footnote {
+  font-size: 10px;
+  color: #7e8a72;
+}
+.course-info p {
+  font-size: 11px;
+  color: #738166;
+}
+.observation-card p {
+  font-size: 12px;
+  color: #69785d;
+}
+.underlined-link {
+  font-size: 11px;
+}
+.practice-record > p {
+  font-size: 11px;
+  color: #7c886f;
+}
+.record-numbers span {
+  font-size: 10px;
+  color: #78866b;
+}
+.greeting-tag {
+  color: #718260;
+}
+@media (max-width: 950px) and (min-width: 761px) {
+  .daily-track {
+    grid-template-columns: 1fr;
+  }
+  .daily-step {
+    padding: 17px 20px;
+  }
+  .daily-step + .daily-step {
+    border-left: 0;
+    border-top: 1px solid #eaede5;
+  }
+  .step-number {
+    display: block;
+  }
+  .step-copy p {
+    font-size: 11px;
+  }
+  .step-copy h3 svg {
+    opacity: 1;
+  }
+  .step-copy > span {
+    font-size: 10px;
+  }
+  .hero-copy h2 {
+    font-size: 25px;
+  }
+  .course-info p {
+    font-size: 11px;
+  }
+}
+.oil-home-section {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 35px;
+  background: #eaf0e2;
+  border: 1px solid #dce5d3;
+  border-radius: 12px;
+  padding: 28px 32px;
+}
+.oil-home-intro {
+  align-self: center;
+}
+.oil-home-intro h2 {
+  font-family: "Songti SC", "STSong", Georgia, serif;
+  font-size: 25px;
+  font-weight: 500;
+  line-height: 1.65;
+  margin: 12px 0;
+}
+.oil-home-intro p {
+  font-size: 12px;
+  color: #7a896d;
+  line-height: 1.8;
+  margin-bottom: 20px;
+}
+.oil-home-links {
+  display: grid;
+  gap: 10px;
+}
+.oil-home-links > a {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 17px;
+  border: 1px solid #dce5d2;
+  border-radius: 7px;
+  background: #f8faf3;
+  color: #597049;
+}
+.oil-home-links > a > span {
+  font-family: Georgia, serif;
+  font-size: 20px;
+  color: #a1af91;
+}
+.oil-home-links b {
+  font-size: 12px;
+  font-weight: 500;
+  display: block;
+}
+.oil-home-links small {
+  display: block;
+  font-size: 10px;
+  color: #91a080;
+  margin-top: 4px;
+}
+.oil-home-links svg {
+  margin-left: auto;
+}
+.oil-home-links a:hover {
+  background: white;
+}
+@media (max-width: 1000px) {
+  .oil-home-section {
+    grid-template-columns: 1fr;
+    gap: 22px;
+    padding: 26px;
+  }
+  .oil-home-intro h2 {
+    font-size: 24px;
+  }
+  .oil-home-intro p {
+    margin-bottom: 14px;
+  }
+}
+@media (max-width: 500px) {
+  .oil-home-section {
+    padding: 22px;
+  }
+  .oil-home-intro h2 {
+    font-size: 23px;
+  }
+  .oil-home-links > a {
+    padding: 14px;
+  }
+  .oil-home-links small {
+    font-size: 10px;
+    line-height: 1.7;
+  }
+}
