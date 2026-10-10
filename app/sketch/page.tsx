@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import Link from "next/link";
 import "./sketch.css";
+import { sketchPng, downloadSketch } from "@/lib/sketch-export";
 import PerspectiveLab from "@/components/PerspectiveLab";
 import { ProportionLab, NegativeSpaceLab } from "@/components/ObservationLab";
 
@@ -326,6 +327,10 @@ function HatchLines({
 }
 
 function DrawingPad() {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const exportingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [active, setActive] = useState<Stroke | null>(null);
   const [pencil, setPencil] = useState(55);
@@ -369,6 +374,22 @@ function DrawingPad() {
     pointerRef.current = null;
     setActive(null);
   };
+  const save = async () => {
+    if (!svgRef.current || !strokes.length || activeRef.current || exportingRef.current) return;
+    exportingRef.current = true;
+    setSaving(true);
+    setSaveMessage("");
+    try {
+      const blob = await sketchPng(svgRef.current, window.devicePixelRatio);
+      downloadSketch(blob);
+      setSaveMessage("PNG 已生成，请在浏览器下载中查看。若设备打开图片预览，可长按保存图片。");
+    } catch {
+      setSaveMessage("保存失败，请重试。你的笔迹仍在练习纸上。");
+    } finally {
+      exportingRef.current = false;
+      setSaving(false);
+    }
+  };
   const addSample = () => {
     const startX = 62 + (strokes.length % 5) * 100;
     const sample = Array.from({ length: 12 }, (_, i) => ({
@@ -392,6 +413,7 @@ function DrawingPad() {
       <svg
         viewBox="0 0 640 230"
         preserveAspectRatio="none"
+        ref={svgRef}
         className="sketch-drawing-surface"
         role="img"
         aria-label="自由排线练习画布，可用鼠标或触控笔绘画；也可通过下方按钮添加示范排线。"
@@ -485,10 +507,21 @@ function DrawingPad() {
           >
             清空
           </button>
+          <button
+            type="button"
+            className="sketch-text-button"
+            disabled={!strokes.length || !!active || saving}
+            onClick={save}
+            aria-busy={saving}
+            title={!strokes.length ? "先画几笔或添加示范排线，再保存练习" : "下载 PNG 图片"}
+          >
+            {saving ? "正在保存…" : "保存练习"}
+          </button>
         </div>
       </div>
+      <p className="sketch-footnote" role="status" aria-live="polite">{saveMessage}</p>
       <p className="sketch-footnote">
-        练习纸只保留在本次页面中。屏幕上的笔触深浅帮助理解层次，手部力度仍需要在纸上练习。
+        刷新或关闭页面前，可点击“保存练习”下载 PNG 图片；笔迹不会自动恢复。屏幕上的笔触深浅帮助理解层次，手部力度仍需要在纸上练习。
       </p>
     </div>
   );
